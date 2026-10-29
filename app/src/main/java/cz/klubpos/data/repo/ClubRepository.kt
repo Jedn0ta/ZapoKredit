@@ -368,7 +368,23 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
         suggestKegIfLow(n)
     }
 
+    /** "Dopito – bez sudu": end the current keg without tapping a new one. */
     suspend fun finishKeg(group: String) = db.kegs().finishActive(group, System.currentTimeMillis())
+
+    /** New draught beer: creates the big (0,5) and optional small (0,3) items + cellar record. */
+    suspend fun addDraughtBeer(name: String, sizeLiters: Double, bigPrice: Long, smallPrice: Long?) = db.withTransaction {
+        val g = name.trim()
+        db.products().insert(Product(name = "$g velké", category = "Pivo", price = bigPrice, trackStock = false, kegGroup = g, pourMl = 500))
+        if (smallPrice != null) db.products().insert(Product(name = "$g malé", category = "Pivo", price = smallPrice, trackStock = false, kegGroup = g, pourMl = 300))
+        db.kegs().upsertStock(cz.klubpos.data.db.entity.KegStock(g, count = 0, minCount = 1, sizeLiters = sizeLiters))
+    }
+
+    /** Stop tracking a beer type on tap: keg ended, cellar record removed, its items become ordinary items. */
+    suspend fun removeDraughtBeer(group: String) = db.withTransaction {
+        db.kegs().finishActive(group, System.currentTimeMillis())
+        db.kegs().deleteStock(group)
+        db.kegs().detachProducts(group)
+    }
     suspend fun largestPour(group: String) = db.kegs().largestPour(group) ?: 500
 
     // ---------- Suppliers ----------

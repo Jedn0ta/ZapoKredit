@@ -230,6 +230,8 @@ interface KegDao {
     @Query("SELECT * FROM keg_stock") fun observeStock(): Flow<List<KegStock>>
     @Query("SELECT * FROM keg_stock WHERE kegGroup = :group") suspend fun stock(group: String): KegStock?
     @androidx.room.Upsert suspend fun upsertStock(s: KegStock)
+    @Query("DELETE FROM keg_stock WHERE kegGroup = :group") suspend fun deleteStock(group: String)
+    @Query("UPDATE products SET kegGroup = NULL, pourMl = 0 WHERE kegGroup = :group") suspend fun detachProducts(group: String)
 
     @Query("SELECT MAX(pourMl) FROM products WHERE kegGroup = :group")
     suspend fun largestPour(group: String): Int?

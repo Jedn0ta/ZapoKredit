@@ -79,9 +79,9 @@ import androidx.compose.runtime.remember
 
 private enum class Dest(val route: String, val label: String, val icon: ImageVector) {
     MEMBERS("members", "Home", Icons.Default.Home),
+    PRODUCTS("products", "Nabídka", Icons.Default.LocalBar),
     INVENTORY("inventory", "Sklad", Icons.Default.Inventory2),
     SHOPPING("shopping", "Nákup", Icons.Default.ShoppingCart),
-    PRODUCTS("products", "Položky", Icons.Default.LocalBar),
     SETTINGS("settings", "Nastavení", Icons.Default.Settings),
 }
 

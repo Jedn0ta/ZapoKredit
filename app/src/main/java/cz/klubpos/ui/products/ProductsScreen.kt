@@ -67,7 +67,7 @@ fun ProductsScreen() {
     var showIo by remember { mutableStateOf(false) }
     fun open(p: Product) { if (unlocked) editing = p else askUnlock = p }
     askUnlock?.let { p -> cz.klubpos.ui.owner.OwnerUnlockDialog(onDismiss = { askUnlock = null },
-        onUnlocked = { askUnlock = null; if (p.id == -1L) showIo = true else editing = p }) }
+        onUnlocked = { askUnlock = null; if (p.id == -1L) showIo = true else if (p.id != -2L) editing = p }) }
 
     val settings = cz.klubpos.ui.components.rememberSettings()
     val cfg by settings.flow.collectAsState()
@@ -81,7 +81,7 @@ fun ProductsScreen() {
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Položky") },
+        topBar = { TopAppBar(title = { Text("Nabídka") },
             actions = {
                 val modes = listOf("ALPHA", "TYPE", "CUSTOM")
                 cz.klubpos.ui.members.Segmented(listOf("A–Z", "Typ", "Vlastní"), modes.indexOf(cfg.productSort).coerceAtLeast(0)) { i ->
@@ -97,6 +97,7 @@ fun ProductsScreen() {
         },
     ) { pad ->
         LazyColumn(Modifier.padding(pad)) {
+            item(key = "draught") { DraughtSection(canEdit = unlocked, onRequestUnlock = { askUnlock = Product(id = -2, name = "", price = 0) }) }
             var lastCat: String? = null
             sorted.forEach { p ->
                 if (byType && p.category != lastCat) {

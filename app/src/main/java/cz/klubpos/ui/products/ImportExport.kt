@@ -98,7 +98,7 @@ fun ImportExportSheet(onDismiss: () -> Unit) {
 
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surface) {
         Column(Modifier.navigationBarsPadding().padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Položky a Excel", style = MaterialTheme.typography.titleLarge)
+            Text("Nabídka a Excel", style = MaterialTheme.typography.titleLarge)
             Text("Vzorová tabulka obsahuje současnou nabídku. Uprav ji v Excelu nebo Google Tabulkách a nahraj zpět – " +
                 "položky se spárují podle názvu (změní se ceny, přidají nové).", color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall)

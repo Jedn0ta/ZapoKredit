@@ -65,7 +65,8 @@ fun KegsSection() {
             KegCard(g, k, st,
                 onTap = { tapFor = g }, onOrder = { orderFor = g },
                 onStockDelta = { d -> scope.launch { repo.setKegStock(g, count = (st?.count ?: 0) + d) } },
-                onEditStock = { editStock = g })
+                onEditStock = { editStock = g },
+                onFinish = { scope.launch { repo.finishKeg(g) } })
         }
     }
 
@@ -89,7 +90,7 @@ fun KegsSection() {
 @Composable
 private fun KegCard(
     group: String, k: KegStatus?, stock: cz.klubpos.data.db.entity.KegStock?,
-    onTap: () -> Unit, onOrder: () -> Unit, onStockDelta: (Int) -> Unit, onEditStock: () -> Unit,
+    onTap: () -> Unit, onOrder: () -> Unit, onStockDelta: (Int) -> Unit, onEditStock: () -> Unit, onFinish: () -> Unit,
 ) {
     val df = remember { SimpleDateFormat("EEEE d. M. 'v' HH:mm", Locale("cs", "CZ")) }
     Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(24.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -134,6 +135,7 @@ private fun KegCard(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(onTap) { Text(if (k == null) "Narazit sud" else "Narazit nový", color = KlubColors.Gold) }
             TextButton(onOrder) { Text("Objednat") }
+            if (k != null) TextButton(onFinish) { Text("Dopito – bez sudu", color = KlubColors.Muted) }
         }
     }
 }
