@@ -92,7 +92,7 @@ fun InventoryScreen() {
                             }
                         },
                     ) {
-                        Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).clickable { countFor = p }
+                        Row(Modifier.fillMaxWidth().clickable { countFor = p }
                             .padding(horizontal = 20.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.size(10.dp).clip(CircleShape).background(categoryColor(p.category)))
                             Spacer(Modifier.width(14.dp))

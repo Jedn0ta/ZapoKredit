@@ -72,6 +72,7 @@ fun ShoppingScreen() {
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     val items by repo.shoppingList().collectAsState(initial = emptyList())
+    val products by repo.allProducts().collectAsState(initial = emptyList())
     val open = items.filter { !it.done }
     val done = items.filter { it.done }
     var showAdd by remember { mutableStateOf(false) }
@@ -88,10 +89,11 @@ fun ShoppingScreen() {
                     }
                 }) { Icon(Icons.Default.AutoFixHigh, "Doplnit podle skladu") }
                 IconButton(enabled = open.isNotEmpty(), onClick = {
-                    val text = open.joinToString("\n") { "• ${it.name} – ${fmtQty(it.quantity)} ${it.unit}" }
                     context.startActivity(Intent.createChooser(
-                        Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, "Nákup:\n$text"), null))
-                }) { Icon(Icons.Default.Share, "Sdílet") }
+                        Intent(Intent.ACTION_SEND).setType("text/plain")
+                            .putExtra(Intent.EXTRA_SUBJECT, "Nákupní seznam")
+                            .putExtra(Intent.EXTRA_TEXT, shareText(open, products)), "Odeslat nákupní seznam"))
+                }) { Icon(Icons.Default.Share, "Odeslat") }
                 IconButton({ showAdd = true }) { Icon(Icons.Default.Add, "Přidat") }
             }
             if (items.isEmpty()) Text("Prázdné", Modifier.padding(20.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -138,7 +140,7 @@ fun ShoppingScreen() {
 
 @Composable
 private fun ItemRow(item: ShoppingItem, onQty: () -> Unit) {
-    Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).padding(start = 20.dp, end = 8.dp),
+    Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically) {
         if (item.done) Box(Modifier.size(8.dp).clip(CircleShape).background(KlubColors.PaidToday))
         Text(item.name, Modifier.weight(1f).padding(start = if (item.done) 12.dp else 0.dp, top = 16.dp, bottom = 16.dp),
@@ -168,4 +170,18 @@ private fun AddDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
         confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = { onAdd(name) }) { Text("Přidat") } },
         dismissButton = { TextButton(onDismiss) { Text("Zrušit") } },
     )
+}
+
+/** WhatsApp/SMS/e-mail friendly list grouped by category. */
+private fun shareText(items: List<ShoppingItem>, products: List<cz.klubpos.data.db.entity.Product>): String {
+    val date = java.text.SimpleDateFormat("d. M. yyyy", java.util.Locale("cs", "CZ")).format(java.util.Date())
+    val byCat = items.groupBy { i -> products.firstOrNull { it.id == i.productId }?.category ?: "Ostatní" }
+    return buildString {
+        append("🛒 Nákup do klubu – ").append(date).append("\n")
+        byCat.toSortedMap().forEach { (cat, list) ->
+            append("\n").append(cat.uppercase()).append("\n")
+            list.forEach { append("☐ ").append(it.name).append(" — ").append(fmtQty(it.quantity)).append(" ").append(it.unit).append("\n") }
+        }
+        append("\nCelkem položek: ").append(items.size)
+    }
 }

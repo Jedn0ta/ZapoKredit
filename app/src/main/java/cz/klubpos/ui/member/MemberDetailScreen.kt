@@ -93,6 +93,10 @@ import cz.klubpos.ui.components.SwipeRow
 import cz.klubpos.ui.components.categoryColor
 import cz.klubpos.ui.components.rememberRepo
 import cz.klubpos.ui.theme.KlubColors
+import cz.klubpos.ui.theme.Display
+import cz.klubpos.ui.theme.glass
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.SolidColor
 import cz.klubpos.ui.components.rememberSettings
 import cz.klubpos.ui.members.Segmented
 import cz.klubpos.ui.tour.tourTarget
@@ -216,7 +220,7 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
                     Row(Modifier.fillMaxSize()) {
                         ProductGrid(products, favorites, lastLabel, countByProduct, Modifier.weight(1f).fillMaxHeight(),
                             onTap = { add(it) }, onLong = { qtyFor = it }, onCustom = { showCustom = true }, onRepeat = { repeat() })
-                        Column(Modifier.width(340.dp).fillMaxHeight().background(MaterialTheme.colorScheme.surface)) {
+                        Column(Modifier.width(360.dp).fillMaxHeight().padding(12.dp).glass(RoundedCornerShape(28.dp))) {
                             receipt(Modifier.weight(1f).tourTarget("receipt"))
                             PayBar(st, expanded = true, onPay = { showPay = true }, onPayAll = { payAll() }, onOpen = {})
                         }
@@ -291,7 +295,7 @@ private fun ProductGrid(
     var cat by remember(favorites.isNotEmpty()) { mutableStateOf<String?>(if (favorites.isNotEmpty()) FAV else null) }
     Column(modifier) {
         if (lastLabel != null) Row(Modifier.padding(start = 12.dp, top = 6.dp).clip(RoundedCornerShape(18.dp))
-            .background(MaterialTheme.colorScheme.surface).clickable(onClick = onRepeat).padding(horizontal = 14.dp, vertical = 8.dp)) {
+            .glass(RoundedCornerShape(18.dp)).clickable(onClick = onRepeat).padding(horizontal = 14.dp, vertical = 8.dp)) {
             Text("↻ To samé · $lastLabel", fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (categories.size > 1 || favorites.isNotEmpty()) Row(Modifier.tourTarget("favorites").horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 6.dp),
@@ -312,7 +316,7 @@ private fun ProductGrid(
                     onTap = { onTap(p) }, onLong = { onLong(p) })
             }
             item {
-                Box(Modifier.tourTarget("custom_amount").aspectRatio(1f).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surface)
+                Box(Modifier.tourTarget("custom_amount").aspectRatio(1f).glass(RoundedCornerShape(22.dp), alpha = 0.03f)
                     .clickable(onClick = onCustom), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(Icons.Default.Add, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -346,8 +350,9 @@ private fun ProductKey(p: Product, count: Double, modifier: Modifier = Modifier,
     val accent = categoryColor(p.category)
     val low = p.trackStock && p.stockQty <= p.minStock
     Box(
-        modifier.aspectRatio(1f).scale(scale).clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surface)
+        modifier.aspectRatio(1f).scale(scale).glass(RoundedCornerShape(22.dp))
+            // soft category glow from the top
+            .background(Brush.verticalGradient(listOf(accent.copy(alpha = 0.28f), Color.Transparent), endY = 260f))
             .combinedClickable(
                 interactionSource = interaction, indication = ripple(),
                 onClick = onTap,
@@ -358,12 +363,11 @@ private fun ProductKey(p: Product, count: Double, modifier: Modifier = Modifier,
             EncryptedImage(p.imageId, p.name, Modifier.fillMaxSize())
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)))
         }
-        Box(Modifier.fillMaxWidth().height(5.dp).background(accent))
-        Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.SpaceBetween) {
-            Text(p.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, lineHeight = 18.sp, maxLines = 3,
+        Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.SpaceBetween) {
+            Text(p.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, lineHeight = 18.sp, maxLines = 3,
                 overflow = TextOverflow.Ellipsis, color = Color.White, modifier = Modifier.padding(top = 4.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
-                Text("${p.price}", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = accent)
+                Text("${p.price}", style = Display.copy(fontSize = 22.sp), color = accent)
                 if (low) Box(Modifier.size(8.dp).clip(CircleShape).background(KlubColors.OldDebt))
             }
         }
@@ -392,7 +396,7 @@ private fun Receipt(
                 start = if (l.productId != null) SwipeAction(Icons.Default.Add, "+1", KlubColors.PaidToday) { onPlus(l) } else null,
                 end = SwipeAction(Icons.Default.Remove, "Storno", KlubColors.OldDebt) { onMinus(l) },
             ) {
-                Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)
+                Row(Modifier.fillMaxWidth()
                     .combinedClickable(onClick = {}, onLongClick = { onLong(l) })
                     .padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically) {
@@ -423,23 +427,23 @@ private fun Receipt(
 @Composable
 private fun PayBar(st: MemberStatus?, expanded: Boolean, onPay: () -> Unit, onPayAll: () -> Unit, onOpen: () -> Unit) {
     val total = st?.balance ?: 0
-    Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).navigationBarsPadding().padding(12.dp),
+    Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(12.dp).then(if (expanded) Modifier else Modifier.glass(RoundedCornerShape(26.dp))).padding(8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f).then(if (expanded) Modifier else Modifier.tourTarget("receipt"))
             .clip(RoundedCornerShape(12.dp)).clickable(enabled = !expanded, onClick = onOpen).padding(8.dp)) {
             Text(if (expanded) "Celkem" else "Účet ▴", style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(if (total < 0) "+${Credits.format(-total)}" else Credits.format(total),
-                fontSize = 26.sp, fontWeight = FontWeight.Bold,
+                style = Display.copy(fontSize = 30.sp),
                 color = when { total <= 0 -> KlubColors.PaidToday; (st?.todayUnpaid ?: 0) > 0 -> MaterialTheme.colorScheme.onSurface; else -> KlubColors.OldDebt })
         }
         val enabled = total > 0
         Box(Modifier.tourTarget("pay_button").height(60.dp).width(160.dp).clip(RoundedCornerShape(14.dp))
-            .background(if (enabled) KlubColors.PaidToday else MaterialTheme.colorScheme.surfaceVariant)
+            .background(if (enabled) Brush.linearGradient(listOf(KlubColors.PaidToday, Color(0xFF1FB57A))) else SolidColor(MaterialTheme.colorScheme.surfaceVariant))
             .combinedClickable(enabled = enabled, onClick = onPay, onLongClick = onPayAll),
             contentAlignment = Alignment.Center) {
-            Text("Zaplatit", color = if (enabled) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text("Zaplatit", color = if (enabled) KlubColors.Ink else MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 19.sp))
         }
     }
 }
@@ -461,7 +465,7 @@ private fun PaySheet(
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surface) {
         Column(Modifier.navigationBarsPadding().padding(horizontal = 24.dp, vertical = 8.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text(Credits.format(value), fontSize = 44.sp, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+            Text(Credits.format(value), style = Display.copy(fontSize = 52.sp), modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (st.todayUnpaid in 1 until st.balance) QuickAmount("Dnešek", Modifier.weight(1f)) { amount = st.todayUnpaid.toString(); received = null }
                 QuickAmount("Vše", Modifier.weight(1f)) { amount = st.balance.toString(); received = null }
@@ -555,7 +559,7 @@ private fun TransferSheet(members: List<MemberStatus>, itemName: String, onDismi
 
 @Composable
 private fun QuickAmount(label: String, modifier: Modifier, onClick: () -> Unit) {
-    Box(modifier.height(44.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant)
+    Box(modifier.height(46.dp).glass(RoundedCornerShape(14.dp), alpha = 0.07f)
         .clickable(onClick = onClick), contentAlignment = Alignment.Center) { Text(label, fontWeight = FontWeight.SemiBold) }
 }
 
@@ -569,13 +573,12 @@ fun Keypad(modifier: Modifier, onDigit: (String) -> Unit, onBack: () -> Unit, on
         rows.forEach { r ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 r.forEach { k ->
-                    Box(Modifier.weight(1f).height(56.dp).clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                    Box(Modifier.weight(1f).height(60.dp).glass(RoundedCornerShape(18.dp), alpha = 0.06f)
                         .combinedClickable(
                             onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); if (k == "⌫") onBack() else onDigit(k) },
                             onLongClick = if (k == "⌫") ({ onClear() }) else null,
                         ), contentAlignment = Alignment.Center) {
-                        Text(k, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                        Text(k, style = Display.copy(fontSize = 24.sp, fontWeight = FontWeight.Medium))
                     }
                 }
             }

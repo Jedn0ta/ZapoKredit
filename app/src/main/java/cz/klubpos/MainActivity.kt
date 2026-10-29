@@ -41,6 +41,30 @@ import cz.klubpos.ui.products.ProductsScreen
 import cz.klubpos.ui.settings.SettingsScreen
 import cz.klubpos.ui.shopping.ShoppingScreen
 import cz.klubpos.ui.theme.KlubTheme
+import cz.klubpos.ui.theme.KlubColors
+import cz.klubpos.ui.theme.AppBackground
+import cz.klubpos.ui.theme.glass
+import cz.klubpos.ui.login.LoginScreen
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationRailItemDefaults
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.delay
 import cz.klubpos.ui.components.rememberRepo
 import cz.klubpos.ui.tour.LocalTour
 import cz.klubpos.ui.tour.TourController
@@ -64,6 +88,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        if (BuildConfig.IS_KEY_APP) {
+            // Owner's phone: the key app only (no database, no POS).
+            setContent { KlubTheme { AppBackground { cz.klubpos.ui.keyapp.KeyApp() } } }
+            return
+        }
         val app = application as KlubPosApp
         val repo = app.repository
         setContent {
@@ -79,10 +108,29 @@ class MainActivity : ComponentActivity() {
                     repo.seedIfEmpty() // demo data on first start – remove for production
                     if (!settings.tourDone) { tour.start(); app.settings.update { it.copy(tourDone = true) } }
                 }
+                // Bartender login: required as soon as at least one bartender exists.
+                val bartenders by repo.bartenders().collectAsState(initial = null)
+                val current by repo.bartender.collectAsState()
+                val locked = !bartenders.isNullOrEmpty() && current == null && !tour.active
+
+                // Auto-lock after inactivity.
+                var lastTouch by remember { mutableLongStateOf(System.currentTimeMillis()) }
+                LaunchedEffect(settings.autoLockMinutes, current) {
+                    while (settings.autoLockMinutes > 0 && current != null) {
+                        delay(15_000)
+                        if (System.currentTimeMillis() - lastTouch > settings.autoLockMinutes * 60_000L) repo.logout()
+                    }
+                }
                 CompositionLocalProvider(LocalTour provides tour) {
-                    Surface(Modifier.fillMaxSize()) {
-                        Box(Modifier.fillMaxSize()) {
-                            AppNav()
+                    AppBackground {
+                        Box(Modifier.fillMaxSize().pointerInput(Unit) {
+                            awaitPointerEventScope {
+                                while (true) { awaitPointerEvent(PointerEventPass.Initial); lastTouch = System.currentTimeMillis() }
+                            }
+                        }) {
+                            if (bartenders == null) Unit
+                            else if (locked) LoginScreen()
+                            else AppNav()
                             TourOverlay(tour)
                         }
                     }
@@ -145,19 +193,54 @@ private fun AppNav() {
         val wide = maxWidth >= 600.dp
         // Single, stable tree: NavHost always in the same place, bars just appear/disappear.
         Row(Modifier.fillMaxSize()) {
-            if (wide && chrome) NavigationRail {
+            if (wide && chrome) NavigationRail(containerColor = Color.Transparent, header = { BartenderChip(compact = true) }) {
+                Spacer(Modifier.weight(1f))
                 Dest.entries.forEach { d ->
-                    NavigationRailItem(current == d.route, { go(d) }, icon = { Icon(d.icon, d.label) }, label = { Text(d.label) })
+                    NavigationRailItem(current == d.route, { go(d) }, icon = { Icon(d.icon, d.label) }, label = { Text(d.label) },
+                        colors = NavigationRailItemDefaults.colors(indicatorColor = KlubColors.Gold.copy(alpha = 0.18f),
+                            selectedIconColor = KlubColors.Gold, selectedTextColor = KlubColors.Gold))
                 }
+                Spacer(Modifier.weight(1f))
             }
             Column(Modifier.weight(1f).fillMaxSize()) {
                 host(Modifier.weight(1f))
-                if (!wide && chrome) NavigationBar {
-                    Dest.entries.forEach { d ->
-                        NavigationBarItem(current == d.route, { go(d) }, icon = { Icon(d.icon, d.label) }, label = { Text(d.label) })
-                    }
+                if (!wide && chrome) FloatingNavBar(current, onSelect = { go(it) })
+            }
+        }
+    }
+}
+
+/** Floating glass pill with the sections; the selected one expands with its label. */
+@Composable
+private fun FloatingNavBar(current: String?, onSelect: (Dest) -> Unit) {
+    Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp)
+        .glass(RoundedCornerShape(30.dp), alpha = 0.08f).padding(6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Dest.entries.forEach { d ->
+            val sel = current == d.route
+            Row(Modifier.clip(RoundedCornerShape(24.dp))
+                .then(if (sel) Modifier.background(KlubColors.GoldBrush) else Modifier)
+                .clickable { onSelect(d) }.padding(horizontal = if (sel) 16.dp else 12.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Icon(d.icon, d.label, tint = if (sel) KlubColors.Ink else KlubColors.Muted, modifier = Modifier.size(22.dp))
+                AnimatedVisibility(sel) {
+                    Text(d.label, Modifier.padding(start = 8.dp), color = KlubColors.Ink,
+                        style = MaterialTheme.typography.labelLarge, maxLines = 1)
                 }
             }
         }
+    }
+}
+
+/** Logged-in bartender; tap to log out (lock). */
+@Composable
+fun BartenderChip(compact: Boolean = false) {
+    val repo = rememberRepo()
+    val b by repo.bartender.collectAsState()
+    val bt = b ?: return
+    Column(Modifier.padding(vertical = 12.dp).clip(RoundedCornerShape(16.dp)).clickable { repo.logout() }.padding(6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally) {
+        cz.klubpos.ui.login.Avatar(bt, if (compact) 44 else 36)
+        Text("Odhlásit", style = MaterialTheme.typography.labelSmall, color = KlubColors.Muted, modifier = Modifier.padding(top = 4.dp))
     }
 }

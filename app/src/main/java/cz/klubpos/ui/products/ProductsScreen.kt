@@ -60,11 +60,15 @@ fun ProductsScreen() {
     val products by repo.allProducts().collectAsState(initial = emptyList())
     var editing by remember { mutableStateOf<Product?>(null) }
     var imageFor by remember { mutableStateOf<Product?>(null) }
+    val unlocked = cz.klubpos.ui.owner.rememberOwnerUnlocked()
+    var askUnlock by remember { mutableStateOf<Product?>(null) }
+    fun open(p: Product) { if (unlocked) editing = p else askUnlock = p }
+    askUnlock?.let { p -> cz.klubpos.ui.owner.OwnerUnlockDialog(onDismiss = { askUnlock = null }, onUnlocked = { askUnlock = null; editing = p }) }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Položky") }) },
+        topBar = { TopAppBar(title = { Text("Položky") }, colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(containerColor = androidx.compose.ui.graphics.Color.Transparent)) },
         floatingActionButton = {
-            FloatingActionButton(onClick = { editing = Product(name = "", price = 0) }) { Icon(Icons.Default.Add, "Nová položka") }
+            FloatingActionButton(onClick = { open(Product(name = "", price = 0)) }) { Icon(Icons.Default.Add, "Nová položka") }
         },
     ) { pad ->
         LazyColumn(Modifier.padding(pad)) {
@@ -78,7 +82,7 @@ fun ProductsScreen() {
                     }
                 }
                 item(key = p.id) {
-                    Row(Modifier.fillMaxWidth().clickable { editing = p }.padding(horizontal = 16.dp, vertical = 8.dp),
+                    Row(Modifier.fillMaxWidth().clickable { open(p) }.padding(horizontal = 16.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         EncryptedImage(p.imageId, p.name, Modifier.size(52.dp).clip(RoundedCornerShape(10.dp)), textSize = 16)
                         Spacer(Modifier.width(12.dp))

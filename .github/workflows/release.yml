@@ -34,6 +34,15 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v5
 
+      - name: Ensure fonts (Google Fonts, OFL)
+        run: |
+          mkdir -p app/src/main/res/font
+          missing=0
+          dl() { [ -f "app/src/main/res/font/$1" ] || { curl -sSfL -o "app/src/main/res/font/$1" "$2"; missing=1; }; }
+          dl space_grotesk.ttf "https://raw.githubusercontent.com/google/fonts/main/ofl/spacegrotesk/SpaceGrotesk%5Bwght%5D.ttf"
+          dl manrope.ttf "https://raw.githubusercontent.com/google/fonts/main/ofl/manrope/Manrope%5Bwght%5D.ttf"
+          echo "FONTS_ADDED=$missing" >> "$GITHUB_ENV"
+
       - name: Decode signing keystore
         if: ${{ env.HAS_KEY == 'true' }}
         run: |
@@ -57,7 +66,16 @@ jobs:
           set -o pipefail
           ./gradlew assembleRelease --stacktrace -PversionName="$VERSION" -PversionCode="${{ github.run_number }}" 2>&1 | tee build.log
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk "dist/ZapoKredit-$VERSION.apk"
+          cp app/build/outputs/apk/pos/release/app-pos-release.apk "dist/ZapoKredit-$VERSION.apk"
+          cp app/build/outputs/apk/klic/release/app-klic-release.apk "dist/ZapoKredit-Klic-$VERSION.apk"
+
+      - name: Commit downloaded fonts back to the repo
+        if: ${{ success() && env.FONTS_ADDED == '1' && github.ref == 'refs/heads/main' }}
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add app/src/main/res/font
+          git commit -m "Add fonts (Space Grotesk, Manrope – OFL)" && git push || true
 
       - name: Report build errors as annotations
         if: failure()

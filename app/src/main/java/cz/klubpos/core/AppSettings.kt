@@ -18,6 +18,8 @@ data class Settings(
     val keepScreenOn: Boolean = true,
     /** Guided tour already shown once (auto-start only on first launch). */
     val tourDone: Boolean = false,
+    /** Log the bartender out after this many minutes without touching the screen. 0 = never. */
+    val autoLockMinutes: Int = 0,
 )
 
 /** Small encrypted key-value store for app configuration. */
@@ -37,6 +39,7 @@ class AppSettings(context: Context) {
         debtLimit = prefs.getLong("debtLimit", 0),
         keepScreenOn = prefs.getBoolean("keepScreenOn", true),
         tourDone = prefs.getBoolean("tourDone", false),
+        autoLockMinutes = prefs.getInt("autoLockMinutes", 0),
     )
 
     fun update(transform: (Settings) -> Settings) {
@@ -47,6 +50,7 @@ class AppSettings(context: Context) {
             .putLong("debtLimit", s.debtLimit)
             .putBoolean("keepScreenOn", s.keepScreenOn)
             .putBoolean("tourDone", s.tourDone)
+            .putInt("autoLockMinutes", s.autoLockMinutes)
             .apply()
         _flow.value = s
     }

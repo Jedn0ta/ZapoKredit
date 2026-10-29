@@ -57,7 +57,11 @@ class UpdateManager(private val context: Context) {
             val version = json.getString("tag_name").removePrefix("v").removePrefix("V")
             val assets = json.getJSONArray("assets")
             val apk = (0 until assets.length()).map { assets.getJSONObject(it) }
-                .firstOrNull { it.getString("name").endsWith(".apk", ignoreCase = true) }
+                .firstOrNull { a ->
+                    val n = a.getString("name")
+                    // Each app updates itself only: the key app takes the "-Klic-" APK, the tablet the other one.
+                    n.endsWith(".apk", ignoreCase = true) && n.contains("Klic", ignoreCase = true) == BuildConfig.IS_KEY_APP
+                }
                 ?: return@withContext UpdateCheck.Error("Vydání $version neobsahuje APK soubor.")
             val info = ReleaseInfo(
                 version = version,

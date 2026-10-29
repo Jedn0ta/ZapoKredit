@@ -30,6 +30,9 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Groups
 import cz.klubpos.ui.components.categoryColor
 import cz.klubpos.ui.tour.tourTarget
+import cz.klubpos.ui.theme.glass
+import cz.klubpos.ui.theme.Grotesk
+import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -123,8 +126,8 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SearchField(query, { query = it }, Modifier.weight(1f).tourTarget("search"))
             Segmented(Filter.entries.map { it.label }, filter.ordinal) { filter = Filter.entries[it] }
-            Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp))
-                .background(if (roundMode) KlubColors.Amber else MaterialTheme.colorScheme.surface)
+            Box(Modifier.size(48.dp)
+                .then(if (roundMode) Modifier.clip(RoundedCornerShape(16.dp)).background(KlubColors.GoldBrush) else Modifier.glass(RoundedCornerShape(16.dp)))
                 .tourTarget("round_button")
                 .combinedClickable(onClick = { roundMode = !roundMode; roundSel.clear() }), contentAlignment = Alignment.Center) {
                 Icon(Icons.Default.Groups, "Runda", tint = if (roundMode) Color.Black else MaterialTheme.colorScheme.onSurface)
@@ -165,8 +168,9 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
                 }
             } else {
                 // Small add button bottom-right
-                Box(Modifier.align(Alignment.BottomEnd).padding(20.dp).size(56.dp).clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary).tourTarget("add_member")
+                Box(Modifier.align(Alignment.BottomEnd).padding(20.dp).size(60.dp)
+                    .shadow(20.dp, CircleShape, ambientColor = KlubColors.Gold, spotColor = KlubColors.Gold)
+                    .clip(CircleShape).background(KlubColors.GoldBrush).tourTarget("add_member")
                     .combinedClickable(onClick = { showAdd = true }), contentAlignment = Alignment.Center) {
                     Icon(Icons.Default.Add, "Nový člen", tint = MaterialTheme.colorScheme.onPrimary)
                 }
@@ -230,25 +234,28 @@ fun headlineColor(h: Headline): Color = when (h) {
 @Composable
 private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected: Boolean = false, onClick: () -> Unit, onLongClick: () -> Unit) {
     val haptic = LocalHapticFeedback.current
-    val shape = RoundedCornerShape(18.dp)
+    val shape = RoundedCornerShape(24.dp)
     Box(
         modifier.fillMaxWidth().aspectRatio(0.82f).clip(shape)
             .then(when {
                 selected -> Modifier.border(BorderStroke(4.dp, KlubColors.Amber), shape)
-                m.inClub -> Modifier.border(BorderStroke(3.dp, KlubColors.InClub), shape)
-                else -> Modifier
+                m.inClub -> Modifier.border(BorderStroke(2.5.dp, Brush.linearGradient(listOf(KlubColors.InClub, KlubColors.Violet))), shape)
+                else -> Modifier.border(1.dp, KlubColors.Hairline, shape)
             })
             .combinedClickable(onClick = onClick, onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onLongClick() })
     ) {
         EncryptedImage(m.photoId, m.name, Modifier.fillMaxSize(), textSize = 44)
         // Absent members are dimmed so present ones pop out.
-        if (!m.inClub) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)))
+        if (!m.inClub) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)))
         // Name over gradient
         Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
             .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))))
             .padding(10.dp, 24.dp, 10.dp, 10.dp)) {
-            Text(m.nickname ?: m.name, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 16.sp,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Column {
+                Text(m.nickname ?: m.name, color = Color.White, style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (m.inClub) Text("v klubu", color = KlubColors.InClub, style = MaterialTheme.typography.labelSmall)
+            }
         }
         AmountBadge(m, Modifier.align(Alignment.TopEnd).padding(8.dp))
         if (selected) Box(Modifier.align(Alignment.TopStart).padding(8.dp).size(28.dp).clip(CircleShape).background(KlubColors.Amber),
@@ -264,13 +271,15 @@ private fun AmountBadge(m: MemberStatus, modifier: Modifier) {
         m.paidToday -> "✓" to KlubColors.PaidToday
         else -> return
     }
-    Text(text, modifier.clip(RoundedCornerShape(10.dp)).background(color).padding(horizontal = 8.dp, vertical = 3.dp),
-        color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+    Text(text, modifier.shadow(12.dp, RoundedCornerShape(12.dp), ambientColor = color, spotColor = color)
+        .clip(RoundedCornerShape(12.dp)).background(Brush.linearGradient(listOf(color, color.copy(alpha = 0.75f))))
+        .padding(horizontal = 10.dp, vertical = 4.dp),
+        color = KlubColors.Ink, style = MaterialTheme.typography.labelLarge.copy(fontFamily = Grotesk, fontWeight = FontWeight.Bold, fontSize = 15.sp))
 }
 
 @Composable
 private fun SearchField(value: String, onChange: (String) -> Unit, modifier: Modifier) {
-    Row(modifier.height(44.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surface).padding(horizontal = 12.dp),
+    Row(modifier.height(48.dp).glass(RoundedCornerShape(16.dp)).padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
         Spacer(Modifier.size(8.dp))
@@ -285,15 +294,15 @@ private fun SearchField(value: String, onChange: (String) -> Unit, modifier: Mod
 
 @Composable
 fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
-    Row(Modifier.height(44.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surface).padding(4.dp)) {
+    Row(Modifier.height(48.dp).glass(RoundedCornerShape(16.dp)).padding(4.dp)) {
         options.forEachIndexed { i, label ->
             val sel = i == selected
-            Box(Modifier.fillMaxHeight().clip(RoundedCornerShape(9.dp))
-                .background(if (sel) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
+            Box(Modifier.fillMaxHeight().clip(RoundedCornerShape(12.dp))
+                .then(if (sel) Modifier.background(KlubColors.GoldBrush) else Modifier)
                 .combinedClickable(onClick = { onSelect(i) }).padding(horizontal = 14.dp),
                 contentAlignment = Alignment.Center) {
-                Text(label, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
-                    color = if (sel) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(label, fontWeight = if (sel) FontWeight.Bold else FontWeight.Medium,
+                    color = if (sel) KlubColors.Ink else MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

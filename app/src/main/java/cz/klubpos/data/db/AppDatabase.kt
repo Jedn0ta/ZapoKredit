@@ -12,6 +12,8 @@ import cz.klubpos.data.db.dao.ShoppingDao
 import cz.klubpos.data.db.dao.StockDao
 import cz.klubpos.data.db.dao.VisitDao
 import cz.klubpos.data.db.entity.LedgerEntry
+import cz.klubpos.data.db.entity.Bartender
+import cz.klubpos.data.db.dao.BartenderDao
 import cz.klubpos.data.db.entity.Member
 import cz.klubpos.data.db.entity.Product
 import cz.klubpos.data.db.entity.ShoppingItem
@@ -23,8 +25,8 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Database(
     entities = [Member::class, Product::class, Visit::class, LedgerEntry::class,
-        StockMovement::class, ShoppingItem::class],
-    version = 2,
+        StockMovement::class, ShoppingItem::class, Bartender::class],
+    version = 3,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -34,11 +36,23 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun products(): ProductDao
     abstract fun stock(): StockDao
     abstract fun shopping(): ShoppingDao
+    abstract fun bartenders(): BartenderDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE ledger ADD COLUMN method TEXT")
+            }
+        }
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE ledger ADD COLUMN bartenderId INTEGER")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `bartenders` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`name` TEXT NOT NULL, `pinHash` TEXT NOT NULL, `pinSalt` TEXT NOT NULL, `colorIndex` INTEGER NOT NULL, " +
+                        "`active` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL)"
+                )
             }
         }
 
@@ -48,7 +62,7 @@ abstract class AppDatabase : RoomDatabase() {
             val factory = SupportOpenHelperFactory(DatabaseKeyManager.getOrCreatePassphrase(context))
             return Room.databaseBuilder(context, AppDatabase::class.java, "klubpos.db")
                 .openHelperFactory(factory)
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 // Before first production release replace with real migrations.
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()

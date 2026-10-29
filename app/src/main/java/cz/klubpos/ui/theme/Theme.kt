@@ -1,42 +1,142 @@
 package cz.klubpos.ui.theme
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import cz.klubpos.R
 
-/** Dark "bar" palette – readable in dim light, low glare at night. */
+/**
+ * "Night lounge" look: near-black ink, warm gold accent, soft coloured glows,
+ * glass cards with hairline borders. Space Grotesk for numbers & headings, Manrope for text.
+ */
 object KlubColors {
-    val Bg = Color(0xFF1B1A17)
-    val Surface = Color(0xFF26241F)
-    val SurfaceHigh = Color(0xFF322F28)
-    val Cream = Color(0xFFF3E9D2)
-    val Muted = Color(0xFFA89F8C)
-    val Amber = Color(0xFFD9A441)
+    val Ink = Color(0xFF0B0A0F)
+    val Bg = Ink
+    val Surface = Color(0xFF16141C)
+    val SurfaceHigh = Color(0xFF221F2B)
+    val Hairline = Color(0x1AFFFFFF)
+    val Cream = Color(0xFFF4EFE6)
+    val Muted = Color(0xFF9C97A6)
 
-    // Status colours of the medallions
-    val OpenTab = Color(0xFFE0893A)     // today's spend not paid yet
-    val PaidToday = Color(0xFF5FAF6E)   // today paid
-    val OldDebt = Color(0xFFD25B4F)     // debt from previous days
-    val InClub = Color(0xFF4FA3D2)      // ring/badge when present
+    val Gold = Color(0xFFF5C451)
+    val Amber = Color(0xFFE8893A)
+    val Violet = Color(0xFF8B5CF6)
+    val GoldBrush = Brush.linearGradient(listOf(Gold, Amber))
+
+    // Status
+    val OpenTab = Color(0xFFFF9F43)
+    val PaidToday = Color(0xFF3DDC97)
+    val OldDebt = Color(0xFFFF5D6C)
+    val InClub = Color(0xFF4DA8FF)
+
+    val Avatar = listOf(
+        Color(0xFFF5C451), Color(0xFF4DA8FF), Color(0xFF3DDC97), Color(0xFFFF7EB6),
+        Color(0xFFA78BFA), Color(0xFFFF9F43), Color(0xFF2DD4BF), Color(0xFFFF5D6C),
+    )
 }
 
+@OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+private fun variable(res: Int, w: Int) =
+    Font(res, FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w)))
+
+val Grotesk = FontFamily(
+    variable(R.font.space_grotesk, 400), variable(R.font.space_grotesk, 500),
+    variable(R.font.space_grotesk, 600), variable(R.font.space_grotesk, 700),
+)
+val Manrope = FontFamily(
+    variable(R.font.manrope, 400), variable(R.font.manrope, 500),
+    variable(R.font.manrope, 600), variable(R.font.manrope, 700), variable(R.font.manrope, 800),
+)
+
+/** Big numbers / brand. */
+val Display = TextStyle(fontFamily = Grotesk, fontWeight = FontWeight.Bold, fontSize = 40.sp, letterSpacing = (-1).sp)
+
+private val base = Typography()
+private fun TextStyle.g() = copy(fontFamily = Grotesk, letterSpacing = (-0.3).sp)
+private fun TextStyle.m() = copy(fontFamily = Manrope)
+
+private val typography = Typography(
+    displayLarge = base.displayLarge.g(), displayMedium = base.displayMedium.g(), displaySmall = base.displaySmall.g(),
+    headlineLarge = base.headlineLarge.g().copy(fontWeight = FontWeight.Bold),
+    headlineMedium = base.headlineMedium.g().copy(fontWeight = FontWeight.Bold),
+    headlineSmall = base.headlineSmall.g().copy(fontWeight = FontWeight.Bold),
+    titleLarge = base.titleLarge.g().copy(fontWeight = FontWeight.SemiBold),
+    titleMedium = base.titleMedium.g().copy(fontWeight = FontWeight.SemiBold),
+    titleSmall = base.titleSmall.g(),
+    bodyLarge = base.bodyLarge.m(), bodyMedium = base.bodyMedium.m(), bodySmall = base.bodySmall.m(),
+    labelLarge = base.labelLarge.m().copy(fontWeight = FontWeight.SemiBold),
+    labelMedium = base.labelMedium.m().copy(fontWeight = FontWeight.SemiBold, letterSpacing = 0.6.sp),
+    labelSmall = base.labelSmall.m().copy(fontWeight = FontWeight.SemiBold, letterSpacing = 0.6.sp),
+)
+
 private val scheme = darkColorScheme(
-    primary = KlubColors.Amber,
-    onPrimary = Color(0xFF1B1A17),
-    background = KlubColors.Bg,
+    primary = KlubColors.Gold,
+    onPrimary = KlubColors.Ink,
+    secondary = KlubColors.Violet,
+    background = Color.Transparent,
     onBackground = KlubColors.Cream,
     surface = KlubColors.Surface,
     onSurface = KlubColors.Cream,
     surfaceVariant = KlubColors.SurfaceHigh,
     onSurfaceVariant = KlubColors.Muted,
+    surfaceContainerLowest = KlubColors.Ink,
+    surfaceContainerLow = KlubColors.Surface,
     surfaceContainer = KlubColors.Surface,
     surfaceContainerHigh = KlubColors.SurfaceHigh,
+    surfaceContainerHighest = KlubColors.SurfaceHigh,
+    outline = Color(0x33FFFFFF),
+    outlineVariant = KlubColors.Hairline,
     error = KlubColors.OldDebt,
+)
+
+private val shapes = Shapes(
+    extraSmall = RoundedCornerShape(8.dp), small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(18.dp), large = RoundedCornerShape(24.dp), extraLarge = RoundedCornerShape(32.dp),
 )
 
 @Composable
 fun KlubTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = scheme, typography = Typography(), content = content)
+    MaterialTheme(colorScheme = scheme, typography = typography, shapes = shapes, content = content)
 }
+
+/** App backdrop: ink with two soft glows (gold top-left, violet bottom-right). */
+@Composable
+fun AppBackground(content: @Composable BoxScope.() -> Unit) {
+    Box(Modifier.fillMaxSize().background(KlubColors.Ink)) {
+        Canvas(Modifier.fillMaxSize()) {
+            drawRect(Brush.radialGradient(listOf(KlubColors.Gold.copy(alpha = 0.10f), Color.Transparent),
+                center = Offset(size.width * 0.05f, size.height * 0.0f), radius = size.maxDimension * 0.6f))
+            drawRect(Brush.radialGradient(listOf(KlubColors.Violet.copy(alpha = 0.12f), Color.Transparent),
+                center = Offset(size.width * 1.0f, size.height * 1.0f), radius = size.maxDimension * 0.7f))
+        }
+        content()
+    }
+}
+
+/** Frosted glass surface: translucent fill + hairline border. */
+fun Modifier.glass(shape: Shape = RoundedCornerShape(24.dp), alpha: Float = 0.055f): Modifier =
+    this.clip(shape)
+        .background(Brush.verticalGradient(listOf(Color.White.copy(alpha = alpha + 0.025f), Color.White.copy(alpha = alpha))))
+        .border(1.dp, KlubColors.Hairline, shape)

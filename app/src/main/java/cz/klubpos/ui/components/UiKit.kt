@@ -77,7 +77,7 @@ fun SwipeRow(
             }
         },
     ) {
-        Box(Modifier.background(MaterialTheme.colorScheme.background)) { content() }
+        Box { content() }
     }
 }
 

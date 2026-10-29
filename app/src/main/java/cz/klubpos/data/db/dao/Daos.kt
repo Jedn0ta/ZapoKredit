@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
 import cz.klubpos.data.db.entity.LedgerEntry
+import cz.klubpos.data.db.entity.Bartender
 import cz.klubpos.data.db.entity.Member
 import cz.klubpos.data.db.entity.Product
 import cz.klubpos.data.db.entity.ShoppingItem
@@ -142,4 +143,26 @@ interface ShoppingDao {
     fun observeAll(): Flow<List<ShoppingItem>>
     @Query("SELECT * FROM shopping_items WHERE productId = :productId AND done = 0 LIMIT 1")
     suspend fun openForProduct(productId: Long): ShoppingItem?
+}
+
+data class BartenderSales(val bartenderId: Long?, val charged: Long, val paid: Long, val items: Double)
+
+@Dao
+interface BartenderDao {
+    @Insert suspend fun insert(b: Bartender): Long
+    @Update suspend fun update(b: Bartender)
+    @Query("SELECT * FROM bartenders WHERE id = :id") suspend fun get(id: Long): Bartender?
+    @Query("SELECT * FROM bartenders WHERE active = 1 ORDER BY name COLLATE NOCASE") fun observeActive(): Flow<List<Bartender>>
+    @Query("SELECT * FROM bartenders ORDER BY active DESC, name COLLATE NOCASE") fun observeAll(): Flow<List<Bartender>>
+
+    @Query(
+        """
+        SELECT bartenderId,
+          COALESCE(SUM(CASE WHEN type != 'PAYMENT' THEN amount END), 0) AS charged,
+          COALESCE(-SUM(CASE WHEN type = 'PAYMENT' THEN amount END), 0) AS paid,
+          COALESCE(SUM(CASE WHEN type = 'CHARGE' AND voidsEntryId IS NULL THEN quantity END), 0) AS items
+        FROM ledger WHERE createdAt >= :since GROUP BY bartenderId
+        """
+    )
+    fun observeSales(since: Long): Flow<List<BartenderSales>>
 }

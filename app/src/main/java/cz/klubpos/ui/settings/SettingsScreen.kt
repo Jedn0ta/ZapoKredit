@@ -45,6 +45,12 @@ import cz.klubpos.domain.QrPayment
 import cz.klubpos.ui.components.rememberRepo
 import cz.klubpos.ui.components.rememberSettings
 import cz.klubpos.ui.tour.tourTarget
+import cz.klubpos.ui.owner.OwnerUnlockDialog
+import cz.klubpos.ui.owner.PairingDialog
+import cz.klubpos.ui.owner.rememberOwnerLock
+import cz.klubpos.ui.owner.rememberOwnerUnlocked
+import cz.klubpos.core.owner.OwnerLock
+import cz.klubpos.ui.theme.glass
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.collectAsState
 import kotlinx.coroutines.launch
@@ -78,7 +84,7 @@ fun SettingsScreen(onStartTour: () -> Unit = {}) {
             .onFailure { state = UpdUi.Failed(it.message ?: "Stažení selhalo") }
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("Nastavení") }) }) { pad ->
+    Scaffold(topBar = { TopAppBar(title = { Text("Nastavení") }, colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(containerColor = androidx.compose.ui.graphics.Color.Transparent)) }) { pad ->
         Column(
             Modifier.padding(pad).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -86,9 +92,47 @@ fun SettingsScreen(onStartTour: () -> Unit = {}) {
             val repo = rememberRepo()
             val appSettings = rememberSettings()
             val cfg by appSettings.flow.collectAsState()
+            val ownerLock = rememberOwnerLock()
+            val paired by ownerLock.paired.collectAsState()
+            val unlocked = rememberOwnerUnlocked()
+            var askUnlock by remember { mutableStateOf(false) }
+            var pairing by remember { mutableStateOf(false) }
+            var confirmUnpair by remember { mutableStateOf(false) }
+            if (askUnlock) OwnerUnlockDialog(onDismiss = { askUnlock = false }, onUnlocked = { askUnlock = false })
+            if (pairing) PairingDialog(cfg.clubName, onDismiss = { pairing = false }, onPaired = { pairing = false })
+            if (confirmUnpair) androidx.compose.material3.AlertDialog(onDismissRequest = { confirmUnpair = false },
+                title = { Text("Zrušit klíč majitele?") },
+                text = { Text("Správa (ceny, barmani, platby) pak bude přístupná komukoli u tabletu.") },
+                confirmButton = { TextButton({ ownerLock.unpair(); confirmUnpair = false }) { Text("Zrušit klíč") } },
+                dismissButton = { TextButton({ confirmUnpair = false }) { Text("Zpět") } })
+
+            // ---------- Klíč majitele ----------
+            Text("Klíč majitele", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            Column(Modifier.fillMaxWidth().glass().tourTarget("owner_key").padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(when {
+                    !paired -> "Není spárován. Správu může měnit kdokoli – doporučujeme spárovat telefon majitele."
+                    unlocked -> "🔓 Správa odemčena (na ${OwnerLock.UNLOCK_MINUTES} min)."
+                    else -> "🔒 Ceny, barmani a platby jsou zamčené. Odemkne je jen majitel svým telefonem."
+                }, color = if (!paired) KlubColors.OpenTab else MaterialTheme.colorScheme.onSurface)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    when {
+                        !paired -> Button({ pairing = true }) { Text("Spárovat telefon") }
+                        !unlocked -> Button({ askUnlock = true }) { Text("Odemknout") }
+                        else -> {
+                            OutlinedButton({ ownerLock.lock() }) { Text("Zamknout") }
+                            OutlinedButton({ pairing = true }) { Text("Nový klíč") }
+                            TextButton({ confirmUnpair = true }) { Text("Zrušit", color = KlubColors.OldDebt) }
+                        }
+                    }
+                }
+            }
+
+            // ---------- Barmani ----------
+            Text("Barmani", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            BartendersSection(canEdit = unlocked, onRequestUnlock = { askUnlock = true })
 
             // ---------- Průvodce ----------
-            Card(Modifier.fillMaxWidth()) {
+            Card(Modifier.fillMaxWidth(), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f))) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Průvodce aplikací", fontWeight = FontWeight.SemiBold)
@@ -131,14 +175,15 @@ fun SettingsScreen(onStartTour: () -> Unit = {}) {
                     }
                     val dirty = account != cfg.account || club != cfg.clubName || (limit.toLongOrNull() ?: 0) != cfg.debtLimit
                     Button(enabled = dirty && (account.isBlank() || iban != null), onClick = {
-                        appSettings.update { it.copy(account = account, clubName = club.ifBlank { "Klub" }, debtLimit = limit.toLongOrNull() ?: 0) }
-                    }) { Text("Uložit") }
+                        if (!unlocked) askUnlock = true
+                        else appSettings.update { it.copy(account = account, clubName = club.ifBlank { "Klub" }, debtLimit = limit.toLongOrNull() ?: 0) }
+                    }) { Text(if (unlocked) "Uložit" else "🔒 Uložit") }
                 }
             }
 
             // ---------- O aplikaci ----------
             Text("O aplikaci", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-            Card(Modifier.fillMaxWidth()) {
+            Card(Modifier.fillMaxWidth(), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f))) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(context.getString(R.string.app_name), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                     InfoRow("Verze", "${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})")
@@ -154,7 +199,7 @@ fun SettingsScreen(onStartTour: () -> Unit = {}) {
 
             // ---------- Aktualizace ----------
             Text("Aktualizace", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-            Card(Modifier.fillMaxWidth()) {
+            Card(Modifier.fillMaxWidth(), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f))) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     when (val s = state) {
                         UpdUi.Idle -> Text("Zkontroluje nejnovější vydání na GitHubu.")

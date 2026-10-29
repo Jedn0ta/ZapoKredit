@@ -71,6 +71,7 @@ data class LedgerEntry(
     val visitId: Long? = null,
     val voidsEntryId: Long? = null,  // set on a correcting entry
     val method: String? = null,      // payments: CASH / QR
+    val bartenderId: Long? = null,   // who wrote it (null = before logins existed / no bartenders set up)
     val createdAt: Long = System.currentTimeMillis(),
 )
 
@@ -95,5 +96,17 @@ data class ShoppingItem(
     val quantity: Double,
     val unit: String = "ks",
     val done: Boolean = false,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
+/** Staff member who logs in with a PIN. PIN is stored only as a salted PBKDF2 hash. */
+@Entity(tableName = "bartenders")
+data class Bartender(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val pinHash: String,
+    val pinSalt: String,
+    val colorIndex: Int = 0,
+    val active: Boolean = true,
     val createdAt: Long = System.currentTimeMillis(),
 )

@@ -25,6 +25,24 @@ android {
         buildConfigField("String", "UPDATE_REPO", "\"Jedn0ta/ZapoKredit\"")
     }
 
+    // Two apps from one codebase:
+    //  pos  – the bar tablet (ZapoKredit)
+    //  klic – the owner's phone key (ZapoKredit Klíč): pairs with the tablet and approves protected actions
+    flavorDimensions += "app"
+    productFlavors {
+        create("pos") {
+            dimension = "app"
+            resValue("string", "app_name", "ZapoKredit")
+            buildConfigField("boolean", "IS_KEY_APP", "false")
+        }
+        create("klic") {
+            dimension = "app"
+            applicationIdSuffix = ".klic"
+            resValue("string", "app_name", "ZapoKredit Klíč")
+            buildConfigField("boolean", "IS_KEY_APP", "true")
+        }
+    }
+
     // Release signing from environment (GitHub Actions secrets). The SAME key must sign every
     // release, otherwise Android refuses to install the update over the existing app.
     val ksPath = System.getenv("SIGNING_KEYSTORE_PATH")
@@ -93,4 +111,6 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.zxing.core)
     implementation(libs.nanohttpd)
+    // QR scanner (used by the owner key app)
+    implementation(libs.zxing.embedded)
 }

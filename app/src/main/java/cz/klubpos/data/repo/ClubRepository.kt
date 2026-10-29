@@ -14,9 +14,51 @@ import cz.klubpos.domain.BusinessDay
 import cz.klubpos.domain.MemberStatus
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
+import cz.klubpos.data.db.entity.Bartender
+import cz.klubpos.core.crypto.Pin
 import kotlin.math.ceil
 
 class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
+
+    // ---------- Bartenders / session ----------
+
+    private val _bartender = kotlinx.coroutines.flow.MutableStateFlow<Bartender?>(null)
+    /** Logged-in bartender; every ledger entry is stamped with them. */
+    val bartender: kotlinx.coroutines.flow.StateFlow<Bartender?> = _bartender
+
+    private suspend fun insertEntry(e: LedgerEntry): Long =
+        db.ledger().insert(e.copy(bartenderId = _bartender.value?.id ?: e.bartenderId))
+
+    fun bartenders() = db.bartenders().observeActive()
+    fun allBartenders() = db.bartenders().observeAll()
+    fun bartenderSales(since: Long) = db.bartenders().observeSales(since)
+
+    suspend fun addBartender(name: String, pin: String): Long {
+        val (hash, salt) = Pin.hash(pin)
+        val count = db.bartenders().observeAll().first().size
+        return db.bartenders().insert(Bartender(name = name.trim(), pinHash = hash, pinSalt = salt, colorIndex = count))
+    }
+
+    suspend fun setBartenderPin(b: Bartender, pin: String) {
+        val (hash, salt) = Pin.hash(pin)
+        db.bartenders().update(b.copy(pinHash = hash, pinSalt = salt))
+    }
+
+    suspend fun setBartenderActive(b: Bartender, active: Boolean) {
+        db.bartenders().update(b.copy(active = active))
+        if (!active && _bartender.value?.id == b.id) logout()
+    }
+
+    /** Returns true and starts the session when the PIN matches. */
+    suspend fun login(b: Bartender, pin: String): Boolean {
+        val fresh = db.bartenders().get(b.id) ?: return false
+        if (!fresh.active || !Pin.verify(pin, fresh.pinHash, fresh.pinSalt)) return false
+        _bartender.value = fresh
+        return true
+    }
+
+    fun logout() { _bartender.value = null }
 
     // ---------- Members ----------
 
@@ -59,7 +101,7 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
             val p = db.products().get(productId) ?: error("Produkt nenalezen")
             val unit = priceOverride ?: p.price
             val visitId = openVisit(memberId)
-            val entryId = db.ledger().insert(
+            val entryId = insertEntry(
                 LedgerEntry(
                     memberId = memberId, type = EntryType.CHARGE, description = p.name,
                     productId = p.id, quantity = qty, unitPrice = unit,
@@ -78,7 +120,7 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
     suspend fun chargeCustom(memberId: Long, description: String, amount: Long) = db.withTransaction {
         require(amount > 0) { "Částka musí být kladná" }
         val visitId = openVisit(memberId)
-        db.ledger().insert(
+        insertEntry(
             LedgerEntry(
                 memberId = memberId, type = EntryType.CHARGE,
                 description = description.ifBlank { "Vlastní položka" },
@@ -89,7 +131,7 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
 
     suspend fun pay(memberId: Long, amount: Long, closeVisitAfter: Boolean, method: String = "CASH") = db.withTransaction {
         require(amount > 0) { "Částka musí být kladná" }
-        db.ledger().insert(
+        insertEntry(
             LedgerEntry(
                 memberId = memberId, type = EntryType.PAYMENT,
                 description = if (method == "QR") "Platba QR" else "Platba hotově",
@@ -121,9 +163,9 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
     suspend fun transfer(entryId: Long, toMemberId: Long) = db.withTransaction {
         val e = db.ledger().get(entryId) ?: return@withTransaction
         if (e.type != EntryType.CHARGE || e.memberId == toMemberId) return@withTransaction
-        db.ledger().insert(e.copy(id = 0, amount = -e.amount, description = "Přesun: ${e.description}",
+        insertEntry(e.copy(id = 0, amount = -e.amount, description = "Přesun: ${e.description}",
             voidsEntryId = e.id, createdAt = System.currentTimeMillis()))
-        db.ledger().insert(e.copy(id = 0, memberId = toMemberId, visitId = openVisit(toMemberId),
+        insertEntry(e.copy(id = 0, memberId = toMemberId, visitId = openVisit(toMemberId),
             createdAt = System.currentTimeMillis()))
         // stock unchanged – the item was sold, only the payer changed
     }
@@ -143,7 +185,7 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
     suspend fun void(entryId: Long) = db.withTransaction {
         val e = db.ledger().get(entryId) ?: return@withTransaction
         if (e.voidsEntryId != null || db.ledger().voidCount(e.id) > 0) return@withTransaction
-        db.ledger().insert(
+        insertEntry(
             e.copy(
                 id = 0, amount = -e.amount, description = "Storno: ${e.description}",
                 voidsEntryId = e.id, createdAt = System.currentTimeMillis(),
