@@ -31,7 +31,7 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
     entities = [Member::class, Product::class, Visit::class, LedgerEntry::class,
         StockMovement::class, ShoppingItem::class, Bartender::class, Keg::class, Supplier::class],
     version = 4,
-    exportSchema = true,
+    exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun members(): MemberDao
