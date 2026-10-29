@@ -20,6 +20,8 @@ data class Member(
     @androidx.room.ColumnInfo(defaultValue = "0") val sortOrder: Int = 0,
     /** VIP member – shown with a gold frame. */
     @androidx.room.ColumnInfo(defaultValue = "0") val vip: Boolean = false,
+    /** Which card (tab) of the main screen the member lives on. */
+    @androidx.room.ColumnInfo(defaultValue = "0") val page: Int = 0,
 )
 
 @Entity(tableName = "products")

@@ -82,6 +82,8 @@ val TOUR_STEPS = listOf(
         "Podrž a pusť: příchod / odchod, zaplatit vše, VIP, fotka, úprava.\nPodrž a táhni: přesuneš dlaždici jinam (pořadí se uloží).", Gesture.HOLD),
     TourStep(TourScreen.MEMBERS, "keg_strip", "Stav sudů",
         "Sudy nahoře ukazují odhadovanou hladinu piva. Každé načepované pivo ji sníží podle objemu (0,5 / 0,3 l). Nový sud narazíš ve Skladu."),
+    TourStep(TourScreen.MEMBERS, null, "Karty členů",
+        "Členy si můžeš rozdělit na karty (Nastavení → Členové). Mezi kartami přepínáš záložkami nahoře nebo swipem. Velikost dlaždic nastavíš tamtéž."),
     TourStep(TourScreen.MEMBERS, "search", "Hledání a filtr",
         "Napiš pár písmen jména nebo přezdívky. Vedle přepneš Vše / V klubu / Dluh."),
     TourStep(TourScreen.MEMBERS, "add_member", "Nový člen", "Přidá člena. Fotku nahraješ přes QR kód z mobilu (podržením dlaždice → Fotka)."),

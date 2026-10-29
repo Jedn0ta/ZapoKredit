@@ -1,5 +1,9 @@
 package cz.klubpos.ui.settings
 
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.width
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
@@ -140,6 +144,7 @@ fun SettingsScreen(onStartTour: () -> Unit = {}) {
                 Text("VIP nastavíš podržením dlaždice člena → Nastavit jako VIP, nebo v úpravě člena.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            MemberCardsSettings()
 
             // ---------- Barmani ----------
             Text("Barmani", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
@@ -324,3 +329,58 @@ private fun InfoRow(label: String, value: String) =
         Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(value, fontWeight = FontWeight.SemiBold)
     }
+
+/** Tile size + member cards (tabs) management. */
+@Composable
+private fun MemberCardsSettings() {
+    val repo = rememberRepo()
+    val settings = rememberSettings()
+    val cfg by settings.flow.collectAsState()
+    val scope = rememberCoroutineScope()
+    var rename by remember { mutableStateOf<Int?>(null) }
+    var delete by remember { mutableStateOf<Int?>(null) }
+    Column(Modifier.fillMaxWidth().glass().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Velikost dlaždic členů", fontWeight = FontWeight.SemiBold)
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(96 to "Malé", 132 to "Střední", 170 to "Velké", 220 to "Obří").forEach { (dp, l) ->
+                androidx.compose.material3.FilterChip(cfg.memberTileDp == dp, { settings.update { it.copy(memberTileDp = dp) } }, label = { Text(l) })
+            }
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Text("Karty členů", fontWeight = FontWeight.SemiBold)
+        Text("Členy rozdělíš na karty (záložky na hlavní obrazovce). Na kartu člena přesuneš podržením jeho dlaždice.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        cfg.memberPages.forEachIndexed { i, name ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("${i + 1}.", Modifier.width(28.dp), color = KlubColors.Muted)
+                Text(name, Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).clickable { rename = i }.padding(8.dp))
+                TextButton({ rename = i }) { Text("Přejmenovat") }
+                if (cfg.memberPages.size > 1) TextButton({ delete = i }) { Text("Smazat", color = KlubColors.OldDebt) }
+            }
+        }
+        OutlinedButton({ settings.update { it.copy(memberPages = it.memberPages + "Karta ${it.memberPages.size + 1}") } }) {
+            Text("+ Přidat kartu")
+        }
+    }
+    rename?.let { i ->
+        var text by remember(i) { mutableStateOf(cfg.memberPages[i]) }
+        androidx.compose.material3.AlertDialog(onDismissRequest = { rename = null },
+            title = { Text("Název karty") },
+            text = { OutlinedTextField(text, { text = it }, singleLine = true) },
+            confirmButton = { TextButton(enabled = text.isNotBlank(), onClick = {
+                settings.update { s -> s.copy(memberPages = s.memberPages.toMutableList().also { it[i] = text.trim() }) }; rename = null
+            }) { Text("Uložit") } },
+            dismissButton = { TextButton({ rename = null }) { Text("Zrušit") } })
+    }
+    delete?.let { i ->
+        androidx.compose.material3.AlertDialog(onDismissRequest = { delete = null },
+            title = { Text("Smazat kartu „${cfg.memberPages[i]}“?") },
+            text = { Text("Členové z ní se přesunou na první kartu.") },
+            confirmButton = { TextButton({
+                scope.launch { repo.removeMemberPage(i) }
+                settings.update { s -> s.copy(memberPages = s.memberPages.toMutableList().also { it.removeAt(i) }) }
+                delete = null
+            }) { Text("Smazat", color = KlubColors.OldDebt) } },
+            dismissButton = { TextButton({ delete = null }) { Text("Zpět") } })
+    }
+}

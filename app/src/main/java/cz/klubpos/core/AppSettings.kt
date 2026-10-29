@@ -24,6 +24,10 @@ data class Settings(
     val productSort: String = "TYPE",
     /** Newcomer label for new members: how many days. 0 = off. */
     val newbieDays: Int = 30,
+    /** Member tile width in dp (smaller = more members on screen). */
+    val memberTileDp: Int = 132,
+    /** Names of the member cards (tabs) on the main screen. */
+    val memberPages: List<String> = listOf("Členové"),
 )
 
 /** Small encrypted key-value store for app configuration. */
@@ -46,6 +50,8 @@ class AppSettings(context: Context) {
         autoLockMinutes = prefs.getInt("autoLockMinutes", 0),
         productSort = prefs.getString("productSort", "TYPE") ?: "TYPE",
         newbieDays = prefs.getInt("newbieDays", 30),
+        memberTileDp = prefs.getInt("memberTileDp", 132),
+        memberPages = (prefs.getString("memberPages", null) ?: "Členové").split("\n").filter { it.isNotBlank() }.ifEmpty { listOf("Členové") },
     )
 
     fun update(transform: (Settings) -> Settings) {
@@ -59,6 +65,8 @@ class AppSettings(context: Context) {
             .putInt("autoLockMinutes", s.autoLockMinutes)
             .putString("productSort", s.productSort)
             .putInt("newbieDays", s.newbieDays)
+            .putInt("memberTileDp", s.memberTileDp)
+            .putString("memberPages", s.memberPages.joinToString("\n"))
             .apply()
         _flow.value = s
     }

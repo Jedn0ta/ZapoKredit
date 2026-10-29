@@ -21,6 +21,7 @@ data class MemberSummaryRow(
     val id: Long,
     val sortOrder: Int,
     val vip: Boolean,
+    val page: Int,
     val createdAt: Long,
     val name: String,
     val nickname: String?,
@@ -40,10 +41,14 @@ interface MemberDao {
     @Query("SELECT * FROM members WHERE id = :id") suspend fun get(id: Long): Member?
     @Query("SELECT COUNT(*) FROM members") suspend fun count(): Int
     @Query("UPDATE members SET sortOrder = :order WHERE id = :id") suspend fun setOrder(id: Long, order: Int)
+    @Query("UPDATE members SET page = :page, sortOrder = :order WHERE id = :id") suspend fun setPage(id: Long, page: Int, order: Int)
+    @Query("UPDATE members SET page = :to WHERE page = :from") suspend fun movePage(from: Int, to: Int)
+    @Query("UPDATE members SET page = page - 1 WHERE page > :removed") suspend fun shiftPagesAfter(removed: Int)
+    @Query("SELECT COALESCE(MAX(sortOrder), -1) FROM members WHERE page = :page") suspend fun maxOrder(page: Int): Int
 
     @Query(
         """
-        SELECT m.id, m.sortOrder, m.vip, m.createdAt, m.name, m.nickname, m.photoId,
+        SELECT m.id, m.sortOrder, m.vip, m.page, m.createdAt, m.name, m.nickname, m.photoId,
           COALESCE((SELECT SUM(amount) FROM ledger l WHERE l.memberId = m.id), 0) AS balance,
           COALESCE((SELECT SUM(amount) FROM ledger l WHERE l.memberId = m.id
                     AND l.type != 'PAYMENT' AND l.createdAt >= :dayStart), 0) AS chargesToday,

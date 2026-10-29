@@ -69,8 +69,18 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
     fun member(id: Long) = db.members().observe(id)
     fun ledger(memberId: Long) = db.ledger().observeForMember(memberId)
 
-    suspend fun addMember(name: String, nickname: String?): Long =
-        db.members().insert(Member(name = name.trim(), nickname = nickname?.trim()?.ifBlank { null }))
+    suspend fun addMember(name: String, nickname: String?, page: Int = 0): Long =
+        db.members().insert(Member(name = name.trim(), nickname = nickname?.trim()?.ifBlank { null },
+            page = page, sortOrder = db.members().maxOrder(page) + 1))
+
+    /** Move a member to another card (placed at its end). */
+    suspend fun setMemberPage(memberId: Long, page: Int) = db.members().setPage(memberId, page, db.members().maxOrder(page) + 1)
+
+    /** A card was deleted: its members go to the first card, later cards shift left. */
+    suspend fun removeMemberPage(index: Int) = db.withTransaction {
+        db.members().movePage(index, 0)
+        db.members().shiftPagesAfter(index)
+    }
 
     suspend fun updateMember(m: Member) = db.members().update(m)
 

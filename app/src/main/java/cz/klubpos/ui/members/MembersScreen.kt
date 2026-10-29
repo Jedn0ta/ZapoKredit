@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -121,13 +122,12 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
         .filter { when (filter) { Filter.ALL -> true; Filter.IN_CLUB -> it.inClub; Filter.DEBT -> it.hasDebt } }
         .filter { query.isBlank() || it.name.contains(query, true) || (it.nickname?.contains(query, true) == true) }
 
-    // Drag & drop order (only in the unfiltered view, so the saved order is the full list).
-    val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
-    val reorder = cz.klubpos.ui.components.rememberGridReorderState(gridState)
-    val local = remember { androidx.compose.runtime.mutableStateListOf<MemberStatus>() }
-    androidx.compose.runtime.LaunchedEffect(shown) { if (reorder.draggingKey == null) { local.clear(); local.addAll(shown) } }
-    val canReorder = filter == Filter.ALL && query.isBlank()
-    val newbieDays = cz.klubpos.ui.components.rememberSettings().flow.collectAsState().value.newbieDays
+    val cfg by cz.klubpos.ui.components.rememberSettings().flow.collectAsState()
+    val pages = cfg.memberPages
+    // Cards are used when not searching/filtering; search & filters look through all cards.
+    val paged = filter == Filter.ALL && query.isBlank()
+    val pager = androidx.compose.foundation.pager.rememberPagerState { pages.size }
+    var moveFor by remember { mutableStateOf<MemberStatus?>(null) }
 
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         // Minimal header: search + segmented filter
@@ -139,26 +139,22 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
         // Beer kegs on tap – level at a glance
         cz.klubpos.ui.inventory.KegStrip(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp))
         Box(Modifier.weight(1f)) {
-            LazyVerticalGrid(
-                state = gridState,
-                modifier = Modifier.reorderableGrid(reorder,
-                    canDrag = { canReorder },
-                    onMove = { from, to ->
-                        val a = local.indexOfFirst { it.memberId == from }; val b = local.indexOfFirst { it.memberId == to }
-                        if (a >= 0 && b >= 0) local.add(b, local.removeAt(a))
-                    },
-                    onDrop = { val ids = local.map { it.memberId }; scope.launch { repo.saveMemberOrder(ids) } },
-                    onLongPress = { key -> local.firstOrNull { it.memberId == key }?.let { actionsFor = it } }),
-                columns = GridCells.Adaptive(132.dp),
-                contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                itemsIndexed(local, key = { _, m -> m.memberId }) { i, m ->
-                    MemberTile(m, newbie = m.isNewbie(newbieDays),
-                        modifier = (if (i == 0) Modifier.tourTarget("member_tile") else Modifier).reorderItem(reorder, m.memberId),
-                        onClick = { onOpenMember(m.memberId) })
+            if (paged) {
+                Column(Modifier.fillMaxSize()) {
+                    if (pages.size > 1) PageTabs(pages, pager.currentPage) { i -> scope.launch { pager.animateScrollToPage(i) } }
+                    androidx.compose.foundation.pager.HorizontalPager(pager, Modifier.fillMaxSize(), key = { it }) { page ->
+                        MemberGrid(
+                            members = members.filter { it.page.coerceIn(0, pages.lastIndex) == page },
+                            tileDp = cfg.memberTileDp, newbieDays = cfg.newbieDays, canReorder = true,
+                            tourFirst = page == 0,
+                            onOpen = onOpenMember, onActions = { actionsFor = it },
+                            onSaveOrder = { ids -> scope.launch { repo.saveMemberOrder(ids) } },
+                        )
+                    }
                 }
+            } else {
+                MemberGrid(shown, cfg.memberTileDp, cfg.newbieDays, canReorder = false, tourFirst = true,
+                    onOpen = onOpenMember, onActions = { actionsFor = it }, onSaveOrder = {})
             }
             Box(Modifier.align(Alignment.BottomEnd).padding(20.dp).size(60.dp)
                 .shadow(20.dp, CircleShape, ambientColor = KlubColors.Gold, spotColor = KlubColors.Gold)
@@ -177,6 +173,7 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
             onPhoto = { photoFor = m; actionsFor = null },
             onEdit = { onEditMember(m.memberId); actionsFor = null },
             onVip = { scope.launch { repo.setVip(m.memberId, !m.vip) }; actionsFor = null },
+            onMove = if (pages.size > 1) ({ moveFor = m; actionsFor = null }) else null,
         )
     }
     payAllFor?.let { m ->
@@ -190,7 +187,28 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
     }
     photoFor?.let { m -> QrUploadDialog("Fotka – ${m.nickname ?: m.name}", onImage = { repo.setMemberPhoto(m.memberId, it) }) { photoFor = null } }
     if (showAdd) AddMemberDialog(onDismiss = { showAdd = false }) { name, nick ->
-        scope.launch { repo.addMember(name, nick) }; showAdd = false
+        val page = if (paged) pager.currentPage else 0
+        scope.launch { repo.addMember(name, nick, page) }; showAdd = false
+    }
+    moveFor?.let { m ->
+        AlertDialog(
+            onDismissRequest = { moveFor = null },
+            title = { Text("Přesunout ${m.nickname ?: m.name} na kartu") },
+            text = {
+                Column {
+                    pages.forEachIndexed { i, name ->
+                        val here = m.page.coerceIn(0, pages.lastIndex) == i
+                        Text((if (here) "● " else "") + name,
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(enabled = !here) {
+                                scope.launch { repo.setMemberPage(m.memberId, i); pager.animateScrollToPage(i) }; moveFor = null
+                            }.padding(14.dp),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = if (here) KlubColors.Gold else MaterialTheme.colorScheme.onSurface)
+                    }
+                }
+            },
+            confirmButton = { TextButton({ moveFor = null }) { Text("Zavřít") } },
+        )
     }
 }
 
@@ -203,7 +221,8 @@ fun headlineColor(h: Headline): Color = when (h) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected: Boolean = false, newbie: Boolean = false, onClick: () -> Unit) {
+private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected: Boolean = false, newbie: Boolean = false,
+    compact: Boolean = false, onClick: () -> Unit) {
     val shape = RoundedCornerShape(24.dp)
     Box(
         modifier.fillMaxWidth().aspectRatio(0.82f)
@@ -225,7 +244,8 @@ private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected:
             .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))))
             .padding(10.dp, 24.dp, 10.dp, 10.dp)) {
             Column {
-                Text(m.nickname ?: m.name, color = Color.White, style = MaterialTheme.typography.titleMedium,
+                Text(m.nickname ?: m.name, color = Color.White,
+                    style = if (compact) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (m.inClub) Text("v klubu", color = KlubColors.InClub, style = MaterialTheme.typography.labelSmall)
             }
@@ -295,6 +315,7 @@ fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
 private fun QuickActionsSheet(
     m: MemberStatus, onDismiss: () -> Unit,
     onToggleVisit: () -> Unit, onPayAll: () -> Unit, onPhoto: () -> Unit, onEdit: () -> Unit, onVip: () -> Unit,
+    onMove: (() -> Unit)?,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surface) {
         Column(Modifier.navigationBarsPadding().padding(bottom = 12.dp)) {
@@ -313,6 +334,9 @@ private fun QuickActionsSheet(
             ListItem(headlineContent = { Text(if (m.vip) "Zrušit VIP" else "Nastavit jako VIP") },
                 leadingContent = { Text("♛", fontSize = 20.sp, color = KlubColors.Gold) },
                 colors = colors, modifier = Modifier.combinedClickable(onClick = onVip))
+            if (onMove != null) ListItem(headlineContent = { Text("Přesunout na kartu…") },
+                leadingContent = { Icon(Icons.Default.SwapHoriz, null) },
+                colors = colors, modifier = Modifier.combinedClickable(onClick = onMove))
             ListItem(headlineContent = { Text("Upravit") }, leadingContent = { Icon(Icons.Default.Edit, null) },
                 colors = colors, modifier = Modifier.combinedClickable(onClick = onEdit))
         }
@@ -335,4 +359,55 @@ private fun AddMemberDialog(onDismiss: () -> Unit, onAdd: (String, String?) -> U
         confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = { onAdd(name, nick) }) { Text("Přidat") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Zrušit") } },
     )
+}
+
+/** Card tabs above the member grid (also swipeable). */
+@Composable
+private fun PageTabs(pages: List<String>, current: Int, onSelect: (Int) -> Unit) {
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp)
+        .tourTarget("member_pages"), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        pages.forEachIndexed { i, name ->
+            val sel = i == current
+            Box(Modifier.height(40.dp).clip(RoundedCornerShape(14.dp))
+                .then(if (sel) Modifier.background(KlubColors.GoldBrush) else Modifier.glass(RoundedCornerShape(14.dp)))
+                .clickable { onSelect(i) }.padding(horizontal = 18.dp), contentAlignment = Alignment.Center) {
+                Text(name, color = if (sel) KlubColors.Ink else MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = if (sel) FontWeight.Bold else FontWeight.Medium))
+            }
+        }
+    }
+}
+
+/** Grid of member tiles with optional drag & drop ordering. */
+@Composable
+private fun MemberGrid(
+    members: List<MemberStatus>, tileDp: Int, newbieDays: Int, canReorder: Boolean, tourFirst: Boolean,
+    onOpen: (Long) -> Unit, onActions: (MemberStatus) -> Unit, onSaveOrder: (List<Long>) -> Unit,
+) {
+    val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    val reorder = cz.klubpos.ui.components.rememberGridReorderState(gridState)
+    val local = remember { androidx.compose.runtime.mutableStateListOf<MemberStatus>() }
+    LaunchedEffect(members) { if (reorder.draggingKey == null) { local.clear(); local.addAll(members) } }
+    val gap = (tileDp / 11).coerceIn(8, 14).dp
+    LazyVerticalGrid(
+        state = gridState,
+        modifier = Modifier.fillMaxSize().reorderableGrid(reorder,
+            canDrag = { canReorder },
+            onMove = { from, to ->
+                val a = local.indexOfFirst { it.memberId == from }; val b = local.indexOfFirst { it.memberId == to }
+                if (a >= 0 && b >= 0) local.add(b, local.removeAt(a))
+            },
+            onDrop = { onSaveOrder(local.map { it.memberId }) },
+            onLongPress = { key -> local.firstOrNull { it.memberId == key }?.let(onActions) }),
+        columns = GridCells.Adaptive(tileDp.dp),
+        contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
+        horizontalArrangement = Arrangement.spacedBy(gap),
+        verticalArrangement = Arrangement.spacedBy(gap),
+    ) {
+        itemsIndexed(local, key = { _, m -> m.memberId }) { i, m ->
+            MemberTile(m, newbie = m.isNewbie(newbieDays), compact = tileDp < 120,
+                modifier = (if (i == 0 && tourFirst) Modifier.tourTarget("member_tile") else Modifier).reorderItem(reorder, m.memberId),
+                onClick = { onOpen(m.memberId) })
+        }
+    }
 }

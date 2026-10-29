@@ -41,6 +41,7 @@ data class MemberStatus(
     val paidToday: Boolean,
     val vip: Boolean = false,
     val createdAt: Long = 0,
+    val page: Int = 0,
 ) {
     /** Newcomer = joined less than [days] days ago. */
     fun isNewbie(days: Int, now: Long = System.currentTimeMillis()) = days > 0 && now - createdAt < days * 86_400_000L
@@ -83,6 +84,7 @@ data class MemberStatus(
                 olderDebt = olderDebt,
                 paidToday = r.chargesToday > 0 && r.paymentsToday >= r.chargesToday,
                 vip = r.vip,
+                page = r.page,
                 createdAt = r.createdAt,
             )
         }
