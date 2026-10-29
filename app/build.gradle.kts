@@ -53,13 +53,23 @@ android {
             keyAlias = System.getenv("SIGNING_KEY_ALIAS")
             keyPassword = System.getenv("SIGNING_KEY_PASSWORD")
         }
+        // TESTING ONLY: fixed, public key committed in the repo so every build (CI and Android Studio)
+        // is signed the same way and in-app updates work. Replace with the secret release key
+        // (GitHub Secrets) before real use – switching keys later requires one reinstall.
+        create("testing") {
+            storeFile = file("test-signing.jks")
+            storePassword = "zapokredit-test"
+            keyAlias = "zapokredit-test"
+            keyPassword = "zapokredit-test"
+        }
     }
 
     buildTypes {
+        debug { signingConfig = signingConfigs.getByName(if (ksPath != null) "release" else "testing") }
         release {
             // Without the release key (secrets not set yet) fall back to the debug key so the APK
             // is still installable for testing. Such builds can't be updated by properly signed ones.
-            signingConfig = if (ksPath != null) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
+            signingConfig = if (ksPath != null) signingConfigs.getByName("release") else signingConfigs.getByName("testing")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
