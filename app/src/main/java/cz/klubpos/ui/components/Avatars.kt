@@ -90,14 +90,14 @@ fun PixelAvatarImage(a: PixelAvatar, modifier: Modifier) {
 
 /** Member picture: photo → gamer avatar → initials on the tile tint. */
 @Composable
-fun MemberAvatar(photoId: String?, avatar: String?, name: String, tint: Color?, modifier: Modifier, textSize: Int = 40) {
+fun MemberAvatar(photoId: String?, avatar: String?, name: String, tint: Color?, modifier: Modifier, textSize: Int = 40, showInitials: Boolean = true) {
     val px = pixelAvatar(avatar)
     when {
         photoId != null -> EncryptedImage(photoId, name, modifier, textSize)
         px != null -> PixelAvatarImage(px, modifier)
         else -> Box(modifier.background(Brush.verticalGradient(listOf((tint ?: Color(0xFF322F3D)).copy(alpha = 0.55f), Color(0xFF15131B)))),
             contentAlignment = Alignment.Center) {
-            androidx.compose.material3.Text(initials(name), fontSize = textSize.sp,
+            if (showInitials) androidx.compose.material3.Text(initials(name), fontSize = textSize.sp,
                 fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, color = Color.White.copy(alpha = 0.85f))
         }
     }

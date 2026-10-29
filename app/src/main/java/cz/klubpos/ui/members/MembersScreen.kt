@@ -241,7 +241,8 @@ fun headlineColor(h: Headline): Color = when (h) {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected: Boolean = false, newbie: Boolean = false,
-    compact: Boolean = false, horizontal: Boolean = false, onClick: () -> Unit) {
+    compact: Boolean = false, horizontal: Boolean = false,
+    holdRing: (@Composable androidx.compose.foundation.layout.BoxScope.() -> Unit)? = null, onClick: () -> Unit) {
     val shape = RoundedCornerShape(24.dp)
     Box(
         modifier.fillMaxWidth().aspectRatio(if (horizontal) 1.45f else 0.82f)
@@ -255,7 +256,6 @@ private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected:
             .then(when {
                 m.vip || m.elder || m.jedi > 0 -> Modifier
                 selected -> Modifier.border(BorderStroke(4.dp, KlubColors.Amber), shape)
-                m.inClub -> Modifier.border(BorderStroke(2.5.dp, Brush.linearGradient(listOf(KlubColors.InClub, KlubColors.Violet))), shape)
                 tileTint(m.tileColor) != null -> Modifier.border(1.5.dp, tileTint(m.tileColor)!!.copy(alpha = 0.7f), shape)
                 else -> Modifier.border(1.dp, KlubColors.Hairline, shape)
             })
@@ -263,7 +263,7 @@ private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected:
     ) {
         if (horizontal) {
             // Tablet: picture fills the tile, big name centred over it
-            MemberAvatar(m.photoId, m.avatar, m.name, tileTint(m.tileColor), Modifier.fillMaxSize(), textSize = if (compact) 30 else 44)
+            MemberAvatar(m.photoId, m.avatar, m.name, tileTint(m.tileColor), Modifier.fillMaxSize(), textSize = if (compact) 30 else 44, showInitials = false)
             tileTint(m.tileColor)?.let { t ->
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(t.copy(alpha = 0.25f), Color.Transparent, t.copy(alpha = 0.3f)))))
             }
@@ -278,10 +278,9 @@ private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected:
                         fontWeight = FontWeight.Bold,
                         shadow = androidx.compose.ui.graphics.Shadow(Color.Black, androidx.compose.ui.geometry.Offset(0f, 2f), 8f)),
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
-                if (m.inClub) Text("In The House", color = KlubColors.InClub, style = MaterialTheme.typography.labelLarge)
             }
         } else {
-        MemberAvatar(m.photoId, m.avatar, m.name, tileTint(m.tileColor), Modifier.fillMaxSize(), textSize = if (compact) 30 else 44)
+        MemberAvatar(m.photoId, m.avatar, m.name, tileTint(m.tileColor), Modifier.fillMaxSize(), textSize = if (compact) 30 else 44, showInitials = false)
         // Glass tint of the member's colour
         tileTint(m.tileColor)?.let { t ->
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(t.copy(alpha = 0.28f), Color.Transparent, t.copy(alpha = 0.35f)))))
@@ -296,11 +295,18 @@ private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected:
                 Text(m.nickname ?: m.name, color = Color.White,
                     style = if (compact) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (m.inClub) Text("In The House", color = KlubColors.InClub, style = MaterialTheme.typography.labelSmall)
             }
         }
         }
         AmountBadge(m, Modifier.align(Alignment.TopEnd).padding(8.dp))
+        // In The House = green dot, was here today but left = grey dot
+        if (m.inClub || m.visitedToday) {
+            val c = if (m.inClub) KlubColors.PaidToday else Color(0xFF8A8794)
+            Box(Modifier.align(Alignment.BottomEnd).padding(10.dp).size(if (compact) 14.dp else 18.dp)
+                .then(if (m.inClub) Modifier.shadow(10.dp, CircleShape, ambientColor = c, spotColor = c) else Modifier)
+                .clip(CircleShape).background(c).border(2.dp, Color.Black.copy(alpha = 0.5f), CircleShape))
+        }
+        holdRing?.invoke(this)
         Column(Modifier.align(Alignment.TopStart).padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (newbie) Text("NOVÁČEK", Modifier.clip(RoundedCornerShape(8.dp))
                 .background(Brush.linearGradient(listOf(KlubColors.PaidToday, Color(0xFF2BB673)))).padding(horizontal = 7.dp, vertical = 3.dp),
@@ -455,7 +461,8 @@ private fun MemberGrid(
             },
             onDrop = { onSaveOrder(local.map { it.memberId }) },
             onLongPress = { key -> local.firstOrNull { it.memberId == key }?.let(onActions) },
-            onDropAt = onDropAt?.let { f -> { key, pos -> f(key as Long, pos) } }),
+            onDropAt = onDropAt?.let { f -> { key, pos -> f(key as Long, pos) } },
+            holdMillis = 800),
         columns = GridCells.Adaptive(if (horizontal) (tileDp * 1.45f).dp else tileDp.dp),
         contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
         horizontalArrangement = Arrangement.spacedBy(gap),
@@ -463,6 +470,7 @@ private fun MemberGrid(
     ) {
         itemsIndexed(local, key = { _, m -> m.memberId }) { i, m ->
             MemberTile(m, newbie = m.isNewbie(newbieDays), compact = tileDp < 120, horizontal = horizontal,
+                holdRing = { cz.klubpos.ui.components.HoldRing(reorder, m.memberId, Modifier.matchParentSize()) },
                 modifier = (if (i == 0 && tourFirst) Modifier.tourTarget("member_tile") else Modifier).reorderItem(reorder, m.memberId),
                 onClick = { onOpen(m.memberId) })
         }

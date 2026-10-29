@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LocalBar
@@ -91,7 +92,11 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         if (BuildConfig.IS_KEY_APP) {
             // Owner's phone: the key app only (no database, no POS).
-            setContent { KlubTheme { AppBackground { cz.klubpos.ui.keyapp.KeyApp() } } }
+            setContent { KlubTheme { AppBackground {
+                Box(Modifier.fillMaxSize().windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing)) {
+                    cz.klubpos.ui.keyapp.KeyApp()
+                }
+            } } }
             return
         }
         val app = application as KlubPosApp
@@ -125,7 +130,11 @@ class MainActivity : ComponentActivity() {
                 CompositionLocalProvider(LocalTour provides tour) {
                   cz.klubpos.ui.components.TiltProvider {
                     AppBackground {
-                        Box(Modifier.fillMaxSize().pointerInput(Unit) {
+                        // Keep all content clear of the status bar, navigation bar and display cutouts
+                        // (the backdrop still draws edge to edge behind them).
+                        Box(Modifier.fillMaxSize()
+                            .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing)
+                            .pointerInput(Unit) {
                             awaitPointerEventScope {
                                 while (true) { awaitPointerEvent(PointerEventPass.Initial); lastTouch = System.currentTimeMillis() }
                             }

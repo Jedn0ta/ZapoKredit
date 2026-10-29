@@ -34,6 +34,7 @@ data class MemberSummaryRow(
     val chargesToday: Long,         // charges since business-day start
     val paymentsToday: Long,        // payments since business-day start (positive number)
     val openVisitId: Long?,
+    val visitedToday: Boolean,
     val lastActivity: Long?,
 )
 
@@ -59,6 +60,7 @@ interface MemberDao {
           COALESCE((SELECT -SUM(amount) FROM ledger l WHERE l.memberId = m.id
                     AND l.type = 'PAYMENT' AND l.createdAt >= :dayStart), 0) AS paymentsToday,
           (SELECT v.id FROM visits v WHERE v.memberId = m.id AND v.closedAt IS NULL LIMIT 1) AS openVisitId,
+          EXISTS (SELECT 1 FROM visits v WHERE v.memberId = m.id AND (v.openedAt >= :dayStart OR v.closedAt >= :dayStart)) AS visitedToday,
           (SELECT MAX(createdAt) FROM ledger l WHERE l.memberId = m.id) AS lastActivity
         FROM members m
         WHERE m.active = 1
