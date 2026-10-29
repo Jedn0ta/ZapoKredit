@@ -25,14 +25,14 @@ jobs:
     env:
       HAS_KEY: ${{ secrets.SIGNING_KEYSTORE_BASE64 != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v5
 
       - name: Decode signing keystore
         if: ${{ env.HAS_KEY == 'true' }}
@@ -54,9 +54,15 @@ jobs:
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           chmod +x gradlew
-          ./gradlew assembleRelease -PversionName="$VERSION" -PversionCode="${{ github.run_number }}"
+          set -o pipefail
+          ./gradlew assembleRelease --stacktrace -PversionName="$VERSION" -PversionCode="${{ github.run_number }}" 2>&1 | tee build.log
           mkdir -p dist
           cp app/build/outputs/apk/release/app-release.apk "dist/ZapoKredit-$VERSION.apk"
+
+      - name: Report build errors as annotations
+        if: failure()
+        run: |
+          grep -E "^e: |What went wrong|error:|Could not|Caused by|> " build.log | head -60 | while IFS= read -r l; do echo "::error::$l"; done
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
