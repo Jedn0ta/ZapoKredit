@@ -45,6 +45,9 @@ import kotlinx.coroutines.withContext
 @Composable
 fun rememberRepo(): ClubRepository = (LocalContext.current.applicationContext as KlubPosApp).repository
 
+@Composable
+fun rememberSettings(): cz.klubpos.core.AppSettings = (LocalContext.current.applicationContext as KlubPosApp).settings
+
 /** Decrypts and shows an image from ImageStore; falls back to initials/placeholder. */
 @Composable
 fun EncryptedImage(imageId: String?, fallbackText: String, modifier: Modifier, textSize: Int = 28) {

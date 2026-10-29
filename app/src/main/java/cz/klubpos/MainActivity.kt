@@ -41,6 +41,16 @@ import cz.klubpos.ui.products.ProductsScreen
 import cz.klubpos.ui.settings.SettingsScreen
 import cz.klubpos.ui.shopping.ShoppingScreen
 import cz.klubpos.ui.theme.KlubTheme
+import cz.klubpos.ui.components.rememberRepo
+import cz.klubpos.ui.tour.LocalTour
+import cz.klubpos.ui.tour.TourController
+import cz.klubpos.ui.tour.TourOverlay
+import cz.klubpos.ui.tour.TourScreen
+import android.view.WindowManager
+import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.remember
 
 private enum class Dest(val route: String, val label: String, val icon: ImageVector) {
     MEMBERS("members", "Členové", Icons.Default.People),
@@ -54,11 +64,29 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val repo = (application as KlubPosApp).repository
+        val app = application as KlubPosApp
+        val repo = app.repository
         setContent {
             KlubTheme {
-                LaunchedEffect(Unit) { repo.seedIfEmpty() } // demo data on first start – remove for production
-                Surface(Modifier.fillMaxSize()) { AppNav() }
+                val settings by app.settings.flow.collectAsState()
+                // Bar tablet: keep the screen awake while the POS is open.
+                LaunchedEffect(settings.keepScreenOn) {
+                    if (settings.keepScreenOn) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
+                val tour = remember { TourController() }
+                LaunchedEffect(Unit) {
+                    repo.seedIfEmpty() // demo data on first start – remove for production
+                    if (!settings.tourDone) { tour.start(); app.settings.update { it.copy(tourDone = true) } }
+                }
+                CompositionLocalProvider(LocalTour provides tour) {
+                    Surface(Modifier.fillMaxSize()) {
+                        Box(Modifier.fillMaxSize()) {
+                            AppNav()
+                            TourOverlay(tour)
+                        }
+                    }
+                }
             }
         }
     }
@@ -74,6 +102,29 @@ private fun AppNav() {
         launchSingleTop = true; restoreState = true
     }
 
+    // The guided tour drives navigation: each step opens the screen it explains.
+    val tour = LocalTour.current
+    val repo = rememberRepo()
+    val members by remember { repo.memberStatuses() }.collectAsState(initial = emptyList())
+    val tourScreen = tour.step?.screen
+    LaunchedEffect(tourScreen, members.isNotEmpty()) {
+        when (tourScreen) {
+            null -> Unit
+            TourScreen.MEMBER -> members.firstOrNull()?.let { m ->
+                if (current?.startsWith("member/") != true) nav.navigate("member/${m.memberId}")
+            }
+            else -> {
+                if (current?.startsWith("member/") == true) nav.popBackStack()
+                val d = when (tourScreen) {
+                    TourScreen.MEMBERS -> Dest.MEMBERS; TourScreen.INVENTORY -> Dest.INVENTORY
+                    TourScreen.SHOPPING -> Dest.SHOPPING; TourScreen.PRODUCTS -> Dest.PRODUCTS
+                    else -> Dest.SETTINGS
+                }
+                if (current != d.route) go(d)
+            }
+        }
+    }
+
     val host: @Composable (Modifier) -> Unit = { mod ->
         NavHost(nav, startDestination = Dest.MEMBERS.route, modifier = mod) {
             composable(Dest.MEMBERS.route) { MembersScreen(onOpenMember = { nav.navigate("member/$it") }) }
@@ -83,7 +134,7 @@ private fun AppNav() {
             composable(Dest.INVENTORY.route) { InventoryScreen() }
             composable(Dest.SHOPPING.route) { ShoppingScreen() }
             composable(Dest.PRODUCTS.route) { ProductsScreen() }
-            composable(Dest.SETTINGS.route) { SettingsScreen() }
+            composable(Dest.SETTINGS.route) { SettingsScreen(onStartTour = { tour.start() }) }
         }
     }
 

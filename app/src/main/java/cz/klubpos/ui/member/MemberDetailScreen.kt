@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package cz.klubpos.ui.member
 
 import androidx.compose.animation.core.animateFloatAsState
@@ -91,12 +93,22 @@ import cz.klubpos.ui.components.SwipeRow
 import cz.klubpos.ui.components.categoryColor
 import cz.klubpos.ui.components.rememberRepo
 import cz.klubpos.ui.theme.KlubColors
+import cz.klubpos.ui.components.rememberSettings
+import cz.klubpos.ui.members.Segmented
+import cz.klubpos.ui.tour.tourTarget
+import cz.klubpos.domain.QrPayment
+import cz.klubpos.upload.QrGenerator
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 /** Today's charges for one item, aggregated like a receipt line. */
+private const val FAV = "\u0000fav"
+
 private data class ReceiptLine(
     val key: String, val name: String, val productId: Long?, val unitPrice: Long,
     val qty: Double, val amount: Long, val entryIds: List<Long>,   // newest first
@@ -146,6 +158,12 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
     var showReceiptSheet by remember { mutableStateOf(false) }
     var showEdit by remember { mutableStateOf(false) }
     var qtyFor by remember { mutableStateOf<Product?>(null) }
+    var transferLine by remember { mutableStateOf<ReceiptLine?>(null) }
+    val settings by rememberSettings().flow.collectAsState()
+    val top by remember { repo.topProducts() }.collectAsState(initial = emptyList())
+    val favorites = remember(top, products) { top.mapNotNull { t -> products.firstOrNull { it.id == t.productId } } }
+    var lastLabel by remember { mutableStateOf<String?>(null) }
+    androidx.compose.runtime.LaunchedEffect(ledger) { lastLabel = repo.lastChargeLabel(memberId) }
 
     fun add(p: Product, qty: Double = 1.0, price: Long? = null) = scope.launch {
         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -162,11 +180,15 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
             }
         }
     }
+    fun repeat() = scope.launch {
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        repo.repeatLast(memberId)?.let { snackbar.currentSnackbarData?.dismiss(); snackbar.showSnackbar("↻ $it") }
+    }
     fun payAll() = scope.launch {
         val bal = st?.balance ?: 0
         if (bal > 0) {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-            repo.pay(memberId, bal, closeVisitAfter = false)
+            repo.pay(memberId, bal, closeVisitAfter = false, method = "CASH")
             snackbar.showSnackbar("Zaplaceno ${Credits.format(bal)}")
         }
     }
@@ -174,28 +196,35 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
     val receipt: @Composable (Modifier) -> Unit = { mod ->
         Receipt(st, lines, payments, mod,
             onPlus = { l -> products.firstOrNull { it.id == l.productId }?.let { add(it, 1.0, l.unitPrice) } },
-            onMinus = { l -> voidWithUndo(l.entryIds.first(), l.name) })
+            onMinus = { l -> voidWithUndo(l.entryIds.first(), l.name) },
+            onLong = { l -> transferLine = l })
     }
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             TopRow(member?.nickname ?: member?.name ?: "", member?.photoId, st?.inClub == true,
                 onBack = onBack, onName = { showEdit = true }, onHistory = { showHistory = true })
+            val limit = settings.debtLimit
+            if (limit > 0 && st != null && st.balance >= limit) {
+                Text("Překročen limit dluhu ${Credits.format(limit)}",
+                    Modifier.fillMaxWidth().background(KlubColors.OldDebt).padding(horizontal = 20.dp, vertical = 8.dp),
+                    color = Color.White, fontWeight = FontWeight.SemiBold)
+            }
             BoxWithConstraints(Modifier.weight(1f)) {
                 if (maxWidth >= 720.dp) {
                     // Tablet: products | receipt
                     Row(Modifier.fillMaxSize()) {
-                        ProductGrid(products, countByProduct, Modifier.weight(1f).fillMaxHeight(),
-                            onTap = { add(it) }, onLong = { qtyFor = it }, onCustom = { showCustom = true })
+                        ProductGrid(products, favorites, lastLabel, countByProduct, Modifier.weight(1f).fillMaxHeight(),
+                            onTap = { add(it) }, onLong = { qtyFor = it }, onCustom = { showCustom = true }, onRepeat = { repeat() })
                         Column(Modifier.width(340.dp).fillMaxHeight().background(MaterialTheme.colorScheme.surface)) {
-                            receipt(Modifier.weight(1f))
+                            receipt(Modifier.weight(1f).tourTarget("receipt"))
                             PayBar(st, expanded = true, onPay = { showPay = true }, onPayAll = { payAll() }, onOpen = {})
                         }
                     }
                 } else {
                     Column(Modifier.fillMaxSize()) {
-                        ProductGrid(products, countByProduct, Modifier.weight(1f),
-                            onTap = { add(it) }, onLong = { qtyFor = it }, onCustom = { showCustom = true })
+                        ProductGrid(products, favorites, lastLabel, countByProduct, Modifier.weight(1f),
+                            onTap = { add(it) }, onLong = { qtyFor = it }, onCustom = { showCustom = true }, onRepeat = { repeat() })
                         PayBar(st, expanded = false, onPay = { showPay = true }, onPayAll = { payAll() },
                             onOpen = { showReceiptSheet = true })
                     }
@@ -209,14 +238,21 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
         containerColor = MaterialTheme.colorScheme.surface) {
         receipt(Modifier.fillMaxWidth().height(420.dp))
     }
-    if (showPay && st != null) PaySheet(st, onDismiss = { showPay = false }) { amount, leave ->
-        scope.launch { repo.pay(memberId, amount, leave); snackbar.showSnackbar("Zaplaceno ${Credits.format(amount)}") }
+    if (showPay && st != null) PaySheet(st, member?.nickname ?: member?.name ?: "", settings.account, settings.clubName,
+        onDismiss = { showPay = false }) { amount, leave, method ->
+        scope.launch { repo.pay(memberId, amount, leave, method); snackbar.showSnackbar("Zaplaceno ${Credits.format(amount)}") }
         showPay = false; if (leave) onBack()
     }
     if (showCustom) CustomItemDialog(onDismiss = { showCustom = false }) { desc, price ->
         scope.launch { repo.chargeCustom(memberId, desc, price) }; showCustom = false
     }
     qtyFor?.let { p -> QtyPriceDialog(p, onDismiss = { qtyFor = null }) { q, pr -> add(p, q, pr); qtyFor = null } }
+    transferLine?.let { l ->
+        TransferSheet(statuses.filter { it.memberId != memberId }, l.name, onDismiss = { transferLine = null }) { to ->
+            scope.launch { repo.transfer(l.entryIds.first(), to.memberId); snackbar.showSnackbar("${l.name} → ${to.nickname ?: to.name}") }
+            transferLine = null
+        }
+    }
     if (showHistory) HistorySheet(ledger, onDismiss = { showHistory = false }) { e -> voidWithUndo(e.id, e.description) }
     if (showEdit) member?.let { m ->
         EditMemberDialog(m.name, m.nickname ?: "", m.note ?: "", onDismiss = { showEdit = false },
@@ -240,21 +276,27 @@ private fun TopRow(name: String, photoId: String?, inClub: Boolean, onBack: () -
             Spacer(Modifier.width(12.dp))
             Text(name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        IconButton(onClick = onHistory) { Icon(Icons.Default.History, "Historie") }
+        IconButton(onClick = onHistory, modifier = Modifier.tourTarget("history")) { Icon(Icons.Default.History, "Historie") }
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ProductGrid(
-    products: List<Product>, counts: Map<Long, Double>, modifier: Modifier,
-    onTap: (Product) -> Unit, onLong: (Product) -> Unit, onCustom: () -> Unit,
+    products: List<Product>, favorites: List<Product>, lastLabel: String?, counts: Map<Long, Double>, modifier: Modifier,
+    onTap: (Product) -> Unit, onLong: (Product) -> Unit, onCustom: () -> Unit, onRepeat: () -> Unit,
 ) {
     val categories = remember(products) { products.map { it.category }.distinct() }
-    var cat by remember { mutableStateOf<String?>(null) }
+    // Default view = favourites ("★") once there is some sales history.
+    var cat by remember(favorites.isNotEmpty()) { mutableStateOf<String?>(if (favorites.isNotEmpty()) FAV else null) }
     Column(modifier) {
-        if (categories.size > 1) Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 6.dp),
+        if (lastLabel != null) Row(Modifier.padding(start = 12.dp, top = 6.dp).clip(RoundedCornerShape(18.dp))
+            .background(MaterialTheme.colorScheme.surface).clickable(onClick = onRepeat).padding(horizontal = 14.dp, vertical = 8.dp)) {
+            Text("↻ To samé · $lastLabel", fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (categories.size > 1 || favorites.isNotEmpty()) Row(Modifier.tourTarget("favorites").horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (favorites.isNotEmpty()) CategoryPill("★ Oblíbené", KlubColors.Amber, cat == FAV) { cat = FAV }
             CategoryPill("Vše", null, cat == null) { cat = null }
             categories.forEach { c -> CategoryPill(c, categoryColor(c), cat == c) { cat = c } }
         }
@@ -264,11 +306,13 @@ private fun ProductGrid(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            items(products.filter { cat == null || it.category == cat }, key = { it.id }) { p ->
-                ProductKey(p, counts[p.id] ?: 0.0, onTap = { onTap(p) }, onLong = { onLong(p) })
+            val list = when (cat) { null -> products; FAV -> favorites; else -> products.filter { it.category == cat } }
+            itemsIndexed(list, key = { _, p -> p.id }) { i, p ->
+                ProductKey(p, counts[p.id] ?: 0.0, if (i == 0) Modifier.tourTarget("product_key") else Modifier,
+                    onTap = { onTap(p) }, onLong = { onLong(p) })
             }
             item {
-                Box(Modifier.aspectRatio(1f).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surface)
+                Box(Modifier.tourTarget("custom_amount").aspectRatio(1f).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surface)
                     .clickable(onClick = onCustom), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(Icons.Default.Add, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -294,7 +338,7 @@ private fun CategoryPill(label: String, color: Color?, selected: Boolean, onClic
 /** Big POS key: category colour, name, price. Count badge = how many today. Bounces on tap. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ProductKey(p: Product, count: Double, onTap: () -> Unit, onLong: () -> Unit) {
+private fun ProductKey(p: Product, count: Double, modifier: Modifier = Modifier, onTap: () -> Unit, onLong: () -> Unit) {
     val haptic = LocalHapticFeedback.current
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -302,7 +346,7 @@ private fun ProductKey(p: Product, count: Double, onTap: () -> Unit, onLong: () 
     val accent = categoryColor(p.category)
     val low = p.trackStock && p.stockQty <= p.minStock
     Box(
-        Modifier.aspectRatio(1f).scale(scale).clip(RoundedCornerShape(16.dp))
+        modifier.aspectRatio(1f).scale(scale).clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surface)
             .combinedClickable(
                 interactionSource = interaction, indication = ripple(),
@@ -333,7 +377,7 @@ private fun ProductKey(p: Product, count: Double, onTap: () -> Unit, onLong: () 
 @Composable
 private fun Receipt(
     st: MemberStatus?, lines: List<ReceiptLine>, payments: List<LedgerEntry>, modifier: Modifier,
-    onPlus: (ReceiptLine) -> Unit, onMinus: (ReceiptLine) -> Unit,
+    onPlus: (ReceiptLine) -> Unit, onMinus: (ReceiptLine) -> Unit, onLong: (ReceiptLine) -> Unit,
 ) {
     LazyColumn(modifier, contentPadding = PaddingValues(vertical = 8.dp)) {
         item {
@@ -348,7 +392,9 @@ private fun Receipt(
                 start = if (l.productId != null) SwipeAction(Icons.Default.Add, "+1", KlubColors.PaidToday) { onPlus(l) } else null,
                 end = SwipeAction(Icons.Default.Remove, "Storno", KlubColors.OldDebt) { onMinus(l) },
             ) {
-                Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(horizontal = 20.dp, vertical = 12.dp),
+                Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)
+                    .combinedClickable(onClick = {}, onLongClick = { onLong(l) })
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     Text(fmtQty(l.qty), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.width(36.dp))
                     Text(l.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -379,7 +425,8 @@ private fun PayBar(st: MemberStatus?, expanded: Boolean, onPay: () -> Unit, onPa
     val total = st?.balance ?: 0
     Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).navigationBarsPadding().padding(12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Column(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable(enabled = !expanded, onClick = onOpen).padding(8.dp)) {
+        Column(Modifier.weight(1f).then(if (expanded) Modifier else Modifier.tourTarget("receipt"))
+            .clip(RoundedCornerShape(12.dp)).clickable(enabled = !expanded, onClick = onOpen).padding(8.dp)) {
             Text(if (expanded) "Celkem" else "Účet ▴", style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(if (total < 0) "+${Credits.format(-total)}" else Credits.format(total),
@@ -387,7 +434,7 @@ private fun PayBar(st: MemberStatus?, expanded: Boolean, onPay: () -> Unit, onPa
                 color = when { total <= 0 -> KlubColors.PaidToday; (st?.todayUnpaid ?: 0) > 0 -> MaterialTheme.colorScheme.onSurface; else -> KlubColors.OldDebt })
         }
         val enabled = total > 0
-        Box(Modifier.height(60.dp).width(160.dp).clip(RoundedCornerShape(14.dp))
+        Box(Modifier.tourTarget("pay_button").height(60.dp).width(160.dp).clip(RoundedCornerShape(14.dp))
             .background(if (enabled) KlubColors.PaidToday else MaterialTheme.colorScheme.surfaceVariant)
             .combinedClickable(enabled = enabled, onClick = onPay, onLongClick = onPayAll),
             contentAlignment = Alignment.Center) {
@@ -399,28 +446,108 @@ private fun PayBar(st: MemberStatus?, expanded: Boolean, onPay: () -> Unit, onPa
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PaySheet(st: MemberStatus, onDismiss: () -> Unit, onPay: (Long, Boolean) -> Unit) {
+private fun PaySheet(
+    st: MemberStatus, memberName: String, account: String, clubName: String,
+    onDismiss: () -> Unit, onPay: (Long, Boolean, String) -> Unit,
+) {
     var amount by remember { mutableStateOf(st.balance.toString()) }
     var leave by remember { mutableStateOf(st.inClub) }
+    var method by remember { mutableStateOf("CASH") }
+    var received by remember { mutableStateOf<Long?>(null) }   // cash handed over
+    var editingReceived by remember { mutableStateOf(false) }
     val value = amount.toLongOrNull() ?: 0
+    val iban = remember(account) { QrPayment.toIban(account) }
+
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surface) {
-        Column(Modifier.navigationBarsPadding().padding(horizontal = 24.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(Modifier.navigationBarsPadding().padding(horizontal = 24.dp, vertical = 8.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(Credits.format(value), fontSize = 44.sp, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (st.todayUnpaid in 1 until st.balance) QuickAmount("Dnešek", Modifier.weight(1f)) { amount = st.todayUnpaid.toString() }
-                QuickAmount("Vše", Modifier.weight(1f)) { amount = st.balance.toString() }
+                if (st.todayUnpaid in 1 until st.balance) QuickAmount("Dnešek", Modifier.weight(1f)) { amount = st.todayUnpaid.toString(); received = null }
+                QuickAmount("Vše", Modifier.weight(1f)) { amount = st.balance.toString(); received = null }
             }
-            Keypad(Modifier.fillMaxWidth(),
-                onDigit = { d -> amount = (if (amount == "0") "" else amount) + d },
-                onBack = { amount = amount.dropLast(1) },
-                onClear = { amount = "" })
+            Segmented(listOf("Hotově", "QR platba"), if (method == "CASH") 0 else 1) { method = if (it == 0) "CASH" else "QR" }
+
+            if (method == "CASH") {
+                // Typical notes → change to give back
+                Text("Dostal", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    QuickAmount("Přesně", Modifier.weight(1f)) { received = value; editingReceived = false }
+                    listOf(200L, 500L, 1000L, 2000L).filter { it >= value }.take(3).forEach { n ->
+                        QuickAmount("$n", Modifier.weight(1f)) { received = n; editingReceived = false }
+                    }
+                    QuickAmount("…", Modifier.weight(0.6f)) { editingReceived = true; received = 0 }
+                }
+                Keypad(Modifier.fillMaxWidth(),
+                    onDigit = { d ->
+                        if (editingReceived) received = ((received ?: 0).toString().trimStart('0') + d).take(7).toLong()
+                        else amount = ((if (amount == "0") "" else amount) + d).take(7)
+                    },
+                    onBack = {
+                        if (editingReceived) received = (received ?: 0).toString().dropLast(1).toLongOrNull() ?: 0
+                        else amount = amount.dropLast(1)
+                    },
+                    onClear = { if (editingReceived) received = 0 else amount = "" })
+                received?.let { r ->
+                    val change = r - value
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                        .background(if (change >= 0) KlubColors.PaidToday.copy(alpha = 0.18f) else KlubColors.OldDebt.copy(alpha = 0.18f))
+                        .padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Dostal ${Credits.format(r)}", Modifier.weight(1f))
+                        Text(if (change >= 0) "Vrátit ${Credits.format(change)}" else "Chybí ${Credits.format(-change)}",
+                            fontSize = 22.sp, fontWeight = FontWeight.Bold,
+                            color = if (change >= 0) KlubColors.PaidToday else KlubColors.OldDebt)
+                    }
+                }
+            } else {
+                if (iban == null) {
+                    Text("Zadej číslo účtu v Nastavení → Platby, pak se tu zobrazí QR kód.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else if (value > 0) {
+                    val payload = remember(iban, value, memberName) {
+                        QrPayment.spayd(iban, value, "$clubName $memberName", variableSymbol = st.memberId)
+                    }
+                    val bmp = remember(payload) { QrGenerator.bitmap(payload, 720).asImageBitmap() }
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        androidx.compose.foundation.Image(bmp, "QR platba",
+                            Modifier.size(280.dp).clip(RoundedCornerShape(12.dp)).background(Color.White).padding(10.dp))
+                    }
+                    Text("Člen naskenuje kód bankovní aplikací. Po potvrzení platby v jeho telefonu klepni na Přijato.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                }
+            }
+
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { leave = !leave }) {
                 Checkbox(leave, { leave = it }); Text("Odchází")
             }
-            Button(onClick = { onPay(value, leave) }, enabled = value > 0,
+            val canPay = value > 0 && (method == "CASH" || iban != null)
+            Button(onClick = { onPay(value, leave, method) }, enabled = canPay,
                 colors = ButtonDefaults.buttonColors(containerColor = KlubColors.PaidToday),
                 shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().height(60.dp)) {
-                Text("Zaplatit", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Text(if (method == "QR") "Přijato" else "Zaplatit", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TransferSheet(members: List<MemberStatus>, itemName: String, onDismiss: () -> Unit, onPick: (MemberStatus) -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surface) {
+        Text("Přesunout „$itemName“ na…", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
+        LazyVerticalGrid(GridCells.Adaptive(96.dp), contentPadding = PaddingValues(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.height(420.dp)) {
+            items(members.sortedByDescending { it.inClub }, key = { it.memberId }) { m ->
+                Column(Modifier.clip(RoundedCornerShape(14.dp)).clickable { onPick(m) }.padding(6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box {
+                        EncryptedImage(m.photoId, m.name, Modifier.size(72.dp).clip(CircleShape), textSize = 24)
+                        if (m.inClub) Box(Modifier.align(Alignment.BottomEnd).size(16.dp).clip(CircleShape).background(KlubColors.InClub))
+                    }
+                    Text(m.nickname ?: m.name, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+                }
             }
         }
     }

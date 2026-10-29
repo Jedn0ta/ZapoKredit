@@ -60,8 +60,47 @@ interface VisitDao {
     @Query("UPDATE visits SET closedAt = :at WHERE closedAt IS NULL") suspend fun closeAll(at: Long)
 }
 
+data class ProductCount(val productId: Long, val qty: Double)
+
+/** Day-close numbers. */
+data class DaySummary(
+    val charged: Long,
+    val paidCash: Long,
+    val paidQr: Long,
+    val paidOther: Long,
+    val customers: Int,
+)
+
 @Dao
 interface LedgerDao {
+    @Query(
+        """
+        SELECT productId, SUM(quantity) AS qty FROM ledger
+        WHERE productId IS NOT NULL AND type = 'CHARGE' AND createdAt >= :since
+        GROUP BY productId ORDER BY qty DESC LIMIT :limit
+        """
+    )
+    fun observeTopProducts(since: Long, limit: Int): Flow<List<ProductCount>>
+
+    @Query(
+        """
+        SELECT
+          COALESCE(SUM(CASE WHEN type != 'PAYMENT' THEN amount END), 0) AS charged,
+          COALESCE(-SUM(CASE WHEN type = 'PAYMENT' AND method = 'CASH' THEN amount END), 0) AS paidCash,
+          COALESCE(-SUM(CASE WHEN type = 'PAYMENT' AND method = 'QR' THEN amount END), 0) AS paidQr,
+          COALESCE(-SUM(CASE WHEN type = 'PAYMENT' AND (method IS NULL OR method NOT IN ('CASH','QR')) THEN amount END), 0) AS paidOther,
+          COUNT(DISTINCT CASE WHEN type = 'CHARGE' THEN memberId END) AS customers
+        FROM ledger WHERE createdAt >= :since
+        """
+    )
+    suspend fun daySummary(since: Long): DaySummary
+
+    @Query("SELECT COALESCE(SUM(b),0) FROM (SELECT SUM(amount) AS b FROM ledger GROUP BY memberId HAVING b > 0)")
+    suspend fun totalOutstanding(): Long
+
+    @Query("SELECT * FROM ledger WHERE memberId = :memberId AND type = 'CHARGE' AND voidsEntryId IS NULL ORDER BY createdAt DESC LIMIT 1")
+    suspend fun lastCharge(memberId: Long): LedgerEntry?
+
     @Insert suspend fun insert(e: LedgerEntry): Long
     @Query("SELECT * FROM ledger WHERE id = :id") suspend fun get(id: Long): LedgerEntry?
     @Query("SELECT * FROM ledger WHERE memberId = :memberId ORDER BY createdAt DESC LIMIT :limit")

@@ -87,16 +87,55 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
         )
     }
 
-    suspend fun pay(memberId: Long, amount: Long, closeVisitAfter: Boolean) = db.withTransaction {
+    suspend fun pay(memberId: Long, amount: Long, closeVisitAfter: Boolean, method: String = "CASH") = db.withTransaction {
         require(amount > 0) { "Částka musí být kladná" }
         db.ledger().insert(
             LedgerEntry(
-                memberId = memberId, type = EntryType.PAYMENT, description = "Platba",
-                unitPrice = amount, amount = -amount, visitId = db.visits().openFor(memberId)?.id,
+                memberId = memberId, type = EntryType.PAYMENT,
+                description = if (method == "QR") "Platba QR" else "Platba hotově",
+                unitPrice = amount, amount = -amount, method = method,
+                visitId = db.visits().openFor(memberId)?.id,
             )
         )
         if (closeVisitAfter) closeVisit(memberId)
     }
+
+    /** Round: the same product written to several members at once. */
+    suspend fun chargeRound(memberIds: Collection<Long>, productId: Long) = db.withTransaction {
+        memberIds.forEach { chargeProduct(it, productId) }
+    }
+
+    /** "To samé" – repeat the member's last (non-voided) charge. Returns its description or null. */
+    suspend fun repeatLast(memberId: Long): String? {
+        val e = db.ledger().lastCharge(memberId) ?: return null
+        if (db.ledger().voidCount(e.id) > 0) return null
+        if (e.productId != null) chargeProduct(memberId, e.productId, e.quantity, e.unitPrice)
+        else chargeCustom(memberId, e.description, e.amount)
+        return e.description
+    }
+
+    suspend fun lastChargeLabel(memberId: Long): String? =
+        db.ledger().lastCharge(memberId)?.takeIf { db.ledger().voidCount(it.id) == 0 }?.description
+
+    /** Move one charge to another member's tab (storno here, same item there). */
+    suspend fun transfer(entryId: Long, toMemberId: Long) = db.withTransaction {
+        val e = db.ledger().get(entryId) ?: return@withTransaction
+        if (e.type != EntryType.CHARGE || e.memberId == toMemberId) return@withTransaction
+        db.ledger().insert(e.copy(id = 0, amount = -e.amount, description = "Přesun: ${e.description}",
+            voidsEntryId = e.id, createdAt = System.currentTimeMillis()))
+        db.ledger().insert(e.copy(id = 0, memberId = toMemberId, visitId = openVisit(toMemberId),
+            createdAt = System.currentTimeMillis()))
+        // stock unchanged – the item was sold, only the payer changed
+    }
+
+    /** Best sellers of the last [days] days, for the "Oblíbené" row. */
+    fun topProducts(days: Int = 30, limit: Int = 8) =
+        db.ledger().observeTopProducts(System.currentTimeMillis() - days * 86_400_000L, limit)
+
+    fun topProductsSince(since: Long, limit: Int) = db.ledger().observeTopProducts(since, limit)
+
+    suspend fun daySummary(dayStart: Long) = db.ledger().daySummary(dayStart)
+    suspend fun totalOutstanding() = db.ledger().totalOutstanding()
 
     suspend fun balance(memberId: Long) = db.ledger().balance(memberId)
 

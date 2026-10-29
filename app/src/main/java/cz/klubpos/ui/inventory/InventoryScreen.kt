@@ -15,7 +15,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import cz.klubpos.ui.tour.tourTarget
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddShoppingCart
@@ -79,9 +80,10 @@ fun InventoryScreen() {
                 Segmented(listOf("Vše", "Dochází $lowCount"), if (onlyLow) 1 else 0) { onlyLow = it == 1 }
             }
             LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
-                items(shown, key = { it.id }) { p ->
+                itemsIndexed(shown, key = { _, p -> p.id }) { i, p ->
                     val low = p.stockQty <= p.minStock
                     SwipeRow(
+                        modifier = if (i == 0) Modifier.tourTarget("stock_row") else Modifier,
                         start = SwipeAction(Icons.Default.MoveToInbox, "Naskladnit", KlubColors.PaidToday) { receiveFor = p },
                         end = SwipeAction(Icons.Default.AddShoppingCart, "Do nákupu", KlubColors.Amber) {
                             scope.launch {

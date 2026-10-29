@@ -70,6 +70,7 @@ data class LedgerEntry(
     val amount: Long,
     val visitId: Long? = null,
     val voidsEntryId: Long? = null,  // set on a correcting entry
+    val method: String? = null,      // payments: CASH / QR
     val createdAt: Long = System.currentTimeMillis(),
 )
 

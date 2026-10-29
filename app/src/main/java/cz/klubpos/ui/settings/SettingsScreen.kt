@@ -41,6 +41,12 @@ import cz.klubpos.ui.theme.KlubColors
 import cz.klubpos.update.ReleaseInfo
 import cz.klubpos.update.UpdateCheck
 import cz.klubpos.update.UpdateManager
+import cz.klubpos.domain.QrPayment
+import cz.klubpos.ui.components.rememberRepo
+import cz.klubpos.ui.components.rememberSettings
+import cz.klubpos.ui.tour.tourTarget
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.collectAsState
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -55,7 +61,7 @@ private sealed interface UpdUi {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(onStartTour: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val updater = remember { UpdateManager(context.applicationContext) }
@@ -77,25 +83,58 @@ fun SettingsScreen() {
             Modifier.padding(pad).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            // ---------- Provoz ----------
-            var confirmNight by remember { mutableStateOf(false) }
-            val repo = cz.klubpos.ui.components.rememberRepo()
+            val repo = rememberRepo()
+            val appSettings = rememberSettings()
+            val cfg by appSettings.flow.collectAsState()
+
+            // ---------- Průvodce ----------
             Card(Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Ukončit večer", fontWeight = FontWeight.SemiBold)
-                        Text("Všem zavře účet. Dluhy zůstanou.", style = MaterialTheme.typography.bodySmall,
+                        Text("Průvodce aplikací", fontWeight = FontWeight.SemiBold)
+                        Text("Ukáže všechny funkce přímo na obrazovce.", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    OutlinedButton(onClick = { confirmNight = true }) { Text("Ukončit") }
+                    Button(onClick = onStartTour) { Text("Spustit") }
                 }
             }
-            if (confirmNight) androidx.compose.material3.AlertDialog(
-                onDismissRequest = { confirmNight = false },
-                title = { Text("Ukončit večer?") },
-                confirmButton = { TextButton({ scope.launch { repo.closeAllVisits() }; confirmNight = false }) { Text("Ukončit") } },
-                dismissButton = { TextButton({ confirmNight = false }) { Text("Zpět") } },
-            )
+
+            // ---------- Uzávěrka ----------
+            Text("Uzávěrka dne", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            DayCloseCard(Modifier.tourTarget("close_day"))
+
+            // ---------- Platby ----------
+            Text("Platby", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            Card(Modifier.fillMaxWidth().tourTarget("payment_settings")) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    var account by remember(cfg.account) { mutableStateOf(cfg.account) }
+                    var club by remember(cfg.clubName) { mutableStateOf(cfg.clubName) }
+                    var limit by remember(cfg.debtLimit) { mutableStateOf(if (cfg.debtLimit > 0) cfg.debtLimit.toString() else "") }
+                    val iban = QrPayment.toIban(account)
+                    OutlinedTextField(account, { account = it }, label = { Text("Účet pro QR platby") },
+                        placeholder = { Text("123456789/0800 nebo IBAN") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                        supportingText = {
+                            Text(when {
+                                account.isBlank() -> "QR platby vypnuté"
+                                iban != null -> "✓ $iban"
+                                else -> "Neplatné číslo účtu"
+                            }, color = if (account.isNotBlank() && iban == null) KlubColors.OldDebt else MaterialTheme.colorScheme.onSurfaceVariant)
+                        })
+                    OutlinedTextField(club, { club = it }, label = { Text("Název klubu (zpráva pro příjemce)") }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(limit, { limit = it.filter(Char::isDigit) }, label = { Text("Limit dluhu (kr, prázdné = bez limitu)") },
+                        singleLine = true, modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Nezhasínat obrazovku", Modifier.weight(1f))
+                        androidx.compose.material3.Switch(cfg.keepScreenOn, { v -> appSettings.update { it.copy(keepScreenOn = v) } })
+                    }
+                    val dirty = account != cfg.account || club != cfg.clubName || (limit.toLongOrNull() ?: 0) != cfg.debtLimit
+                    Button(enabled = dirty && (account.isBlank() || iban != null), onClick = {
+                        appSettings.update { it.copy(account = account, clubName = club.ifBlank { "Klub" }, debtLimit = limit.toLongOrNull() ?: 0) }
+                    }) { Text("Uložit") }
+                }
+            }
 
             // ---------- O aplikaci ----------
             Text("O aplikaci", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
@@ -152,6 +191,58 @@ fun SettingsScreen() {
             Spacer(Modifier.height(24.dp))
         }
     }
+}
+
+/** Today's numbers + end-of-night button. */
+@Composable
+private fun DayCloseCard(modifier: Modifier) {
+    val repo = rememberRepo()
+    val scope = rememberCoroutineScope()
+    val dayStart = remember { BusinessDay.startMillis() }
+    var summary by remember { mutableStateOf<cz.klubpos.data.db.dao.DaySummary?>(null) }
+    var outstanding by remember { mutableStateOf(0L) }
+    var refresh by remember { mutableStateOf(0) }
+    var confirmNight by remember { mutableStateOf(false) }
+    val top by remember { repo.topProductsSince(dayStart, 5) }.collectAsState(initial = emptyList())
+    val products by repo.allProducts().collectAsState(initial = emptyList())
+    androidx.compose.runtime.LaunchedEffect(refresh) {
+        summary = repo.daySummary(dayStart); outstanding = repo.totalOutstanding()
+    }
+    // Recompute when the screen is opened; cheap queries.
+    Card(modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            val s = summary
+            if (s != null) {
+                Text(cz.klubpos.domain.Credits.format(s.charged), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                Text("útrata dnes · ${s.customers} hostů", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                InfoRow("Hotově", cz.klubpos.domain.Credits.format(s.paidCash))
+                InfoRow("QR platby", cz.klubpos.domain.Credits.format(s.paidQr))
+                if (s.paidOther > 0) InfoRow("Jiné", cz.klubpos.domain.Credits.format(s.paidOther))
+                InfoRow("Dnes nezaplaceno", cz.klubpos.domain.Credits.format((s.charged - s.paidCash - s.paidQr - s.paidOther).coerceAtLeast(0)))
+                InfoRow("Dluží celkem", cz.klubpos.domain.Credits.format(outstanding))
+                if (top.isNotEmpty()) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                    Text("Nejprodávanější", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    top.forEach { t ->
+                        val name = products.firstOrNull { it.id == t.productId }?.name ?: "?"
+                        InfoRow(name, "${cz.klubpos.ui.member.fmtQty(t.qty)}×")
+                    }
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { refresh++ }) { Text("Obnovit") }
+                Button(onClick = { confirmNight = true }) { Text("Ukončit večer") }
+            }
+        }
+    }
+    if (confirmNight) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { confirmNight = false },
+        title = { Text("Ukončit večer?") },
+        text = { Text("Všem se zavře účet (odchod z klubu). Dluhy zůstanou.") },
+        confirmButton = { TextButton({ scope.launch { repo.closeAllVisits() }; confirmNight = false }) { Text("Ukončit") } },
+        dismissButton = { TextButton({ confirmNight = false }) { Text("Zpět") } },
+    )
 }
 
 @Composable

@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package cz.klubpos.ui.members
 
 import androidx.compose.foundation.BorderStroke
@@ -23,6 +25,11 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Groups
+import cz.klubpos.ui.components.categoryColor
+import cz.klubpos.ui.tour.tourTarget
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -99,6 +106,11 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
     var actionsFor by remember { mutableStateOf<MemberStatus?>(null) }
     var photoFor by remember { mutableStateOf<MemberStatus?>(null) }
     var payAllFor by remember { mutableStateOf<MemberStatus?>(null) }
+    // Round mode: select several members, then pick one product for all of them.
+    var roundMode by remember { mutableStateOf(false) }
+    val roundSel = remember { androidx.compose.runtime.mutableStateListOf<Long>() }
+    var pickRoundProduct by remember { mutableStateOf(false) }
+    val products by repo.activeProducts().collectAsState(initial = emptyList())
 
     val shown = members
         .filter { when (filter) { Filter.ALL -> true; Filter.IN_CLUB -> it.inClub; Filter.DEBT -> it.hasDebt } }
@@ -109,8 +121,14 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
         // Minimal header: search + segmented filter
         Row(Modifier.fillMaxWidth().padding(16.dp, 12.dp, 16.dp, 4.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SearchField(query, { query = it }, Modifier.weight(1f))
+            SearchField(query, { query = it }, Modifier.weight(1f).tourTarget("search"))
             Segmented(Filter.entries.map { it.label }, filter.ordinal) { filter = Filter.entries[it] }
+            Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp))
+                .background(if (roundMode) KlubColors.Amber else MaterialTheme.colorScheme.surface)
+                .tourTarget("round_button")
+                .combinedClickable(onClick = { roundMode = !roundMode; roundSel.clear() }), contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.Groups, "Runda", tint = if (roundMode) Color.Black else MaterialTheme.colorScheme.onSurface)
+            }
         }
         Box(Modifier.weight(1f)) {
             LazyVerticalGrid(
@@ -119,15 +137,39 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                items(shown, key = { it.memberId }) { m ->
-                    MemberTile(m, onClick = { onOpenMember(m.memberId) }, onLongClick = { actionsFor = m })
+                itemsIndexed(shown, key = { _, m -> m.memberId }) { i, m ->
+                    val selected = m.memberId in roundSel
+                    MemberTile(m,
+                        modifier = if (i == 0) Modifier.tourTarget("member_tile") else Modifier,
+                        selected = roundMode && selected,
+                        onClick = {
+                            if (roundMode) { if (selected) roundSel.remove(m.memberId) else roundSel.add(m.memberId) }
+                            else onOpenMember(m.memberId)
+                        },
+                        onLongClick = { if (!roundMode) actionsFor = m })
                 }
             }
-            // Small add button bottom-right
-            Box(Modifier.align(Alignment.BottomEnd).padding(20.dp).size(56.dp).clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary)
-                .combinedClickable(onClick = { showAdd = true }), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.Add, "Nový člen", tint = MaterialTheme.colorScheme.onPrimary)
+            if (roundMode) {
+                // Round bar
+                Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(if (roundSel.isEmpty()) "Označ členy pro rundu" else "Runda · ${roundSel.size}",
+                        Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                    TextButton({ roundMode = false; roundSel.clear() }) { Text("Zrušit") }
+                    Box(Modifier.height(52.dp).clip(RoundedCornerShape(14.dp))
+                        .background(if (roundSel.isNotEmpty()) KlubColors.Amber else MaterialTheme.colorScheme.surfaceVariant)
+                        .combinedClickable(enabled = roundSel.isNotEmpty(), onClick = { pickRoundProduct = true })
+                        .padding(horizontal = 22.dp), contentAlignment = Alignment.Center) {
+                        Text("Vybrat položku", color = Color.Black, fontWeight = FontWeight.Bold)
+                    }
+                }
+            } else {
+                // Small add button bottom-right
+                Box(Modifier.align(Alignment.BottomEnd).padding(20.dp).size(56.dp).clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary).tourTarget("add_member")
+                    .combinedClickable(onClick = { showAdd = true }), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Add, "Nový člen", tint = MaterialTheme.colorScheme.onPrimary)
+                }
             }
         }
     }
@@ -150,6 +192,27 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
             dismissButton = { TextButton({ payAllFor = null }) { Text("Zpět") } },
         )
     }
+    if (pickRoundProduct) ModalBottomSheet(onDismissRequest = { pickRoundProduct = false },
+        containerColor = MaterialTheme.colorScheme.surface) {
+        Text("Runda pro ${roundSel.size}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
+        LazyVerticalGrid(GridCells.Adaptive(110.dp), contentPadding = PaddingValues(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.height(420.dp)) {
+            items(products, key = { it.id }) { p ->
+                Column(Modifier.aspectRatio(1.2f).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceVariant)
+                    .combinedClickable(onClick = {
+                        val ids = roundSel.toList()
+                        scope.launch { repo.chargeRound(ids, p.id) }
+                        pickRoundProduct = false; roundMode = false; roundSel.clear()
+                    }).padding(10.dp), verticalArrangement = Arrangement.SpaceBetween) {
+                    Box(Modifier.fillMaxWidth().height(4.dp).background(categoryColor(p.category)))
+                    Text(p.name, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text("${p.price} × ${roundSel.size}", color = categoryColor(p.category), fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
     photoFor?.let { m -> QrUploadDialog("Fotka – ${m.nickname ?: m.name}", onImage = { repo.setMemberPhoto(m.memberId, it) }) { photoFor = null } }
     if (showAdd) AddMemberDialog(onDismiss = { showAdd = false }) { name, nick ->
         scope.launch { repo.addMember(name, nick) }; showAdd = false
@@ -165,12 +228,16 @@ fun headlineColor(h: Headline): Color = when (h) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MemberTile(m: MemberStatus, onClick: () -> Unit, onLongClick: () -> Unit) {
+private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected: Boolean = false, onClick: () -> Unit, onLongClick: () -> Unit) {
     val haptic = LocalHapticFeedback.current
     val shape = RoundedCornerShape(18.dp)
     Box(
-        Modifier.fillMaxWidth().aspectRatio(0.82f).clip(shape)
-            .then(if (m.inClub) Modifier.border(BorderStroke(3.dp, KlubColors.InClub), shape) else Modifier)
+        modifier.fillMaxWidth().aspectRatio(0.82f).clip(shape)
+            .then(when {
+                selected -> Modifier.border(BorderStroke(4.dp, KlubColors.Amber), shape)
+                m.inClub -> Modifier.border(BorderStroke(3.dp, KlubColors.InClub), shape)
+                else -> Modifier
+            })
             .combinedClickable(onClick = onClick, onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onLongClick() })
     ) {
         EncryptedImage(m.photoId, m.name, Modifier.fillMaxSize(), textSize = 44)
@@ -184,6 +251,8 @@ private fun MemberTile(m: MemberStatus, onClick: () -> Unit, onLongClick: () -> 
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         AmountBadge(m, Modifier.align(Alignment.TopEnd).padding(8.dp))
+        if (selected) Box(Modifier.align(Alignment.TopStart).padding(8.dp).size(28.dp).clip(CircleShape).background(KlubColors.Amber),
+            contentAlignment = Alignment.Center) { Icon(Icons.Default.Check, null, tint = Color.Black, modifier = Modifier.size(18.dp)) }
     }
 }
 

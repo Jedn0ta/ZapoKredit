@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import cz.klubpos.ui.tour.tourTarget
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -79,7 +81,7 @@ fun ShoppingScreen() {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             Row(Modifier.fillMaxWidth().padding(20.dp, 12.dp, 8.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Nákup", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                IconButton({
+                IconButton(modifier = Modifier.tourTarget("autofill"), onClick = {
                     scope.launch {
                         val n = repo.generateShoppingList()
                         snackbar.showSnackbar(if (n > 0) "Doplněno ze skladu: $n" else "Nic dalšího nedochází")
@@ -94,8 +96,9 @@ fun ShoppingScreen() {
             }
             if (items.isEmpty()) Text("Prázdné", Modifier.padding(20.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
-                items(open, key = { it.id }) { item ->
+                itemsIndexed(open, key = { _, it -> it.id }) { i, item ->
                     SwipeRow(
+                        modifier = if (i == 0) Modifier.tourTarget("shopping_row") else Modifier,
                         start = SwipeAction(Icons.Default.Check, "Koupeno", KlubColors.PaidToday) {
                             scope.launch { repo.setShoppingDone(item, true, receive = true) }
                         },
