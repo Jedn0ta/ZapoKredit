@@ -32,6 +32,9 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Groups
 import cz.klubpos.ui.components.categoryColor
 import cz.klubpos.ui.tour.tourTarget
+import cz.klubpos.ui.components.reorderableGrid
+import cz.klubpos.ui.components.reorderItem
+import androidx.compose.foundation.clickable
 import cz.klubpos.ui.theme.glass
 import cz.klubpos.ui.theme.Grotesk
 import androidx.compose.ui.draw.shadow
@@ -115,7 +118,13 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
     val shown = members
         .filter { when (filter) { Filter.ALL -> true; Filter.IN_CLUB -> it.inClub; Filter.DEBT -> it.hasDebt } }
         .filter { query.isBlank() || it.name.contains(query, true) || (it.nickname?.contains(query, true) == true) }
-        .sortedByDescending { it.inClub }
+
+    // Drag & drop order (only in the unfiltered view, so the saved order is the full list).
+    val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    val reorder = cz.klubpos.ui.components.rememberGridReorderState(gridState)
+    val local = remember { androidx.compose.runtime.mutableStateListOf<MemberStatus>() }
+    androidx.compose.runtime.LaunchedEffect(shown) { if (reorder.draggingKey == null) { local.clear(); local.addAll(shown) } }
+    val canReorder = filter == Filter.ALL && query.isBlank()
 
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         // Minimal header: search + segmented filter
@@ -128,16 +137,24 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
         cz.klubpos.ui.inventory.KegStrip(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp))
         Box(Modifier.weight(1f)) {
             LazyVerticalGrid(
+                state = gridState,
+                modifier = Modifier.reorderableGrid(reorder,
+                    canDrag = { canReorder },
+                    onMove = { from, to ->
+                        val a = local.indexOfFirst { it.memberId == from }; val b = local.indexOfFirst { it.memberId == to }
+                        if (a >= 0 && b >= 0) local.add(b, local.removeAt(a))
+                    },
+                    onDrop = { val ids = local.map { it.memberId }; scope.launch { repo.saveMemberOrder(ids) } },
+                    onLongPress = { key -> local.firstOrNull { it.memberId == key }?.let { actionsFor = it } }),
                 columns = GridCells.Adaptive(132.dp),
                 contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                itemsIndexed(shown, key = { _, m -> m.memberId }) { i, m ->
+                itemsIndexed(local, key = { _, m -> m.memberId }) { i, m ->
                     MemberTile(m,
-                        modifier = if (i == 0) Modifier.tourTarget("member_tile") else Modifier,
-                        onClick = { onOpenMember(m.memberId) },
-                        onLongClick = { actionsFor = m })
+                        modifier = (if (i == 0) Modifier.tourTarget("member_tile") else Modifier).reorderItem(reorder, m.memberId),
+                        onClick = { onOpenMember(m.memberId) })
                 }
             }
             Box(Modifier.align(Alignment.BottomEnd).padding(20.dp).size(60.dp)
@@ -182,7 +199,7 @@ fun headlineColor(h: Headline): Color = when (h) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected: Boolean = false, onClick: () -> Unit, onLongClick: () -> Unit) {
+private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected: Boolean = false, onClick: () -> Unit) {
     val haptic = LocalHapticFeedback.current
     val shape = RoundedCornerShape(24.dp)
     Box(
@@ -192,7 +209,7 @@ private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected:
                 m.inClub -> Modifier.border(BorderStroke(2.5.dp, Brush.linearGradient(listOf(KlubColors.InClub, KlubColors.Violet))), shape)
                 else -> Modifier.border(1.dp, KlubColors.Hairline, shape)
             })
-            .combinedClickable(onClick = onClick, onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onLongClick() })
+            .clickable(onClick = onClick)
     ) {
         EncryptedImage(m.photoId, m.name, Modifier.fillMaxSize(), textSize = 44)
         // Absent members are dimmed so present ones pop out.

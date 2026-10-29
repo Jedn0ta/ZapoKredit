@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.Flow
 /** Per-member aggregates needed to compute the medallion status in one query. */
 data class MemberSummaryRow(
     val id: Long,
+    val sortOrder: Int,
     val name: String,
     val nickname: String?,
     val photoId: String?,
@@ -36,10 +37,11 @@ interface MemberDao {
     @Query("SELECT * FROM members WHERE id = :id") fun observe(id: Long): Flow<Member?>
     @Query("SELECT * FROM members WHERE id = :id") suspend fun get(id: Long): Member?
     @Query("SELECT COUNT(*) FROM members") suspend fun count(): Int
+    @Query("UPDATE members SET sortOrder = :order WHERE id = :id") suspend fun setOrder(id: Long, order: Int)
 
     @Query(
         """
-        SELECT m.id, m.name, m.nickname, m.photoId,
+        SELECT m.id, m.sortOrder, m.name, m.nickname, m.photoId,
           COALESCE((SELECT SUM(amount) FROM ledger l WHERE l.memberId = m.id), 0) AS balance,
           COALESCE((SELECT SUM(amount) FROM ledger l WHERE l.memberId = m.id
                     AND l.type != 'PAYMENT' AND l.createdAt >= :dayStart), 0) AS chargesToday,
@@ -49,7 +51,7 @@ interface MemberDao {
           (SELECT MAX(createdAt) FROM ledger l WHERE l.memberId = m.id) AS lastActivity
         FROM members m
         WHERE m.active = 1
-        ORDER BY m.name COLLATE NOCASE
+        ORDER BY m.sortOrder, m.name COLLATE NOCASE
         """
     )
     fun observeSummaries(dayStart: Long): Flow<List<MemberSummaryRow>>
@@ -131,6 +133,7 @@ interface ProductDao {
     @Update suspend fun update(p: Product)
     @Query("SELECT * FROM products WHERE id = :id") suspend fun get(id: Long): Product?
     @Query("SELECT * FROM products") suspend fun all(): List<Product>
+    @Query("UPDATE products SET sortOrder = :order WHERE id = :id") suspend fun setOrder(id: Long, order: Int)
     @Query("SELECT * FROM products WHERE active = 1 ORDER BY category, sortOrder, name COLLATE NOCASE")
     fun observeActive(): Flow<List<Product>>
     @Query("SELECT * FROM products ORDER BY active DESC, category, name COLLATE NOCASE")

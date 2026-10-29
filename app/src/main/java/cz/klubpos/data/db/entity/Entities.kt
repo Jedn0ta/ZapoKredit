@@ -16,6 +16,8 @@ data class Member(
     val note: String? = null,
     val active: Boolean = true,      // archived members are hidden from the main grid
     val createdAt: Long = System.currentTimeMillis(),
+    /** Position on the main screen (drag & drop). */
+    @androidx.room.ColumnInfo(defaultValue = "0") val sortOrder: Int = 0,
 )
 
 @Entity(tableName = "products")

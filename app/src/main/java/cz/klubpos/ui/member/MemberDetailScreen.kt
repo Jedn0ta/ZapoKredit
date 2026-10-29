@@ -103,6 +103,8 @@ import androidx.compose.ui.graphics.SolidColor
 import cz.klubpos.ui.components.rememberSettings
 import cz.klubpos.ui.members.Segmented
 import cz.klubpos.ui.tour.tourTarget
+import cz.klubpos.ui.components.reorderableGrid
+import cz.klubpos.ui.components.reorderItem
 import cz.klubpos.domain.QrPayment
 import cz.klubpos.upload.QrGenerator
 import androidx.compose.ui.graphics.asImageBitmap
@@ -171,6 +173,7 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
     var confirmLeave by remember { mutableStateOf(false) }
     var qtyFor by remember { mutableStateOf<Product?>(null) }
     var transferLine by remember { mutableStateOf<ReceiptLine?>(null) }
+    var qtyLine by remember { mutableStateOf<CartLine?>(null) }
     val settings by rememberSettings().flow.collectAsState()
     // Favourites = what THIS member orders most often.
     val top by remember(memberId) { repo.memberFavorites(memberId) }.collectAsState(initial = emptyList())
@@ -185,6 +188,11 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
         if (i >= 0) cart[i] = cart[i].copy(qty = cart[i].qty + qty)
         else cart += CartLine(p, desc ?: p?.name ?: "Vlastní položka", unit, qty)
     }
+    /** Set the exact count of a product in the order (0 = remove it). Price always comes from Položky. */
+    fun setQty(p: Product, q: Int) {
+        cart.removeAll { it.product?.id == p.id }
+        if (q > 0) cart += CartLine(p, p.name, p.price, q.toDouble())
+    }
     fun removeOne(l: CartLine) {
         val i = cart.indexOf(l); if (i < 0) return
         if (l.qty > 1) cart[i] = l.copy(qty = l.qty - 1) else cart.removeAt(i)
@@ -195,9 +203,15 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
         cart.clear()
         repo.chargeCart(memberId, items)
     }
-    /** "Na futro": write the order to the tab and go back to the members. */
+    /** "Budiž": write the order to the tab and go back to the members. */
     fun futro() = scope.launch { haptic.performHapticFeedback(HapticFeedbackType.LongPress); commitCart(); onBack() }
     fun pay() = scope.launch { commitCart(); showPay = true }
+    /** "Na futro": write to the tab, stay on this member. */
+    fun futroStay() = scope.launch {
+        val total = cartTotal
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress); commitCart()
+        snackbar.currentSnackbarData?.dismiss(); snackbar.showSnackbar("Připsáno na účet ${Credits.format(total)}")
+    }
     fun voidWithUndo(entryId: Long, label: String) = scope.launch {
         repo.void(entryId)
         snackbar.currentSnackbarData?.dismiss()
@@ -210,7 +224,8 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
     }
     fun repeat() = scope.launch {
         repo.lastChargeEntry(memberId)?.let { e ->
-            addToCart(products.firstOrNull { it.id == e.productId }, e.quantity, e.unitPrice, e.description)
+            val p = products.firstOrNull { it.id == e.productId }
+            addToCart(p, e.quantity, p?.price ?: e.unitPrice, e.description)
         }
     }
 
@@ -222,13 +237,14 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
         Receipt(st, cart, lines, payments, mod,
             onCartPlus = { l -> addToCart(l.product, 1.0, l.unitPrice, l.desc) },
             onCartMinus = { l -> removeOne(l) },
-            onPlus = { l -> products.firstOrNull { it.id == l.productId }?.let { addToCart(it, 1.0, l.unitPrice) } },
+            onCartLong = { l -> qtyLine = l },
+            onPlus = { l -> products.firstOrNull { it.id == l.productId }?.let { addToCart(it) } },
             onMinus = { l -> voidWithUndo(l.entryIds.first(), l.name) },
             onLong = { l -> transferLine = l })
     }
     val bar: @Composable (Boolean) -> Unit = { expanded ->
         OrderBar(st, cartTotal, cart.sumOf { it.qty }, expanded,
-            onFutro = { futro() }, onPay = { pay() }, onDone = onBack, onOpen = { showReceiptSheet = true })
+            onPay = { pay() }, onFutro = { futroStay() }, onBudiz = { futro() }, onOpen = { showReceiptSheet = true })
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -245,7 +261,8 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
                 if (maxWidth >= 720.dp) {
                     Row(Modifier.fillMaxSize()) {
                         ProductGrid(products, favorites, lastLabel, cartCount, Modifier.weight(1f).fillMaxHeight(),
-                            onTap = { addToCart(it) }, onLong = { qtyFor = it }, onCustom = { showCustom = true }, onRepeat = { repeat() })
+                            onTap = { addToCart(it) }, onLong = { qtyFor = it }, onCustom = { showCustom = true }, onRepeat = { repeat() },
+                            onMinus = { p -> cart.firstOrNull { it.product?.id == p.id }?.let { removeOne(it) } })
                         Column(Modifier.width(380.dp).fillMaxHeight().padding(12.dp).glass(RoundedCornerShape(28.dp))) {
                             receipt(Modifier.weight(1f).tourTarget("receipt"))
                             bar(true)
@@ -254,7 +271,8 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
                 } else {
                     Column(Modifier.fillMaxSize()) {
                         ProductGrid(products, favorites, lastLabel, cartCount, Modifier.weight(1f),
-                            onTap = { addToCart(it) }, onLong = { qtyFor = it }, onCustom = { showCustom = true }, onRepeat = { repeat() })
+                            onTap = { addToCart(it) }, onLong = { qtyFor = it }, onCustom = { showCustom = true }, onRepeat = { repeat() },
+                            onMinus = { p -> cart.firstOrNull { it.product?.id == p.id }?.let { removeOne(it) } })
                         bar(false)
                     }
                 }
@@ -276,7 +294,7 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
         onDismissRequest = { confirmLeave = false },
         title = { Text("Neuložená objednávka") },
         text = { Text("${fmtQty(cart.sumOf { it.qty })} položek za ${Credits.format(cartTotal)}. Připsat na účet?") },
-        confirmButton = { TextButton({ confirmLeave = false; futro() }) { Text("Na futro") } },
+        confirmButton = { TextButton({ confirmLeave = false; futro() }) { Text("Budiž – připsat") } },
         dismissButton = {
             Row {
                 TextButton({ confirmLeave = false; cart.clear(); onBack() }) { Text("Zahodit", color = KlubColors.OldDebt) }
@@ -287,7 +305,17 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
     if (showCustom) CustomItemDialog(onDismiss = { showCustom = false }) { desc, price ->
         addToCart(null, 1.0, price, desc.ifBlank { "Vlastní položka" }); showCustom = false
     }
-    qtyFor?.let { p -> QtyPriceDialog(p, onDismiss = { qtyFor = null }) { q, pr -> addToCart(p, q, pr); qtyFor = null } }
+    qtyFor?.let { p ->
+        val current = cart.filter { it.product?.id == p.id }.sumOf { it.qty }
+        QtyDialog(p.name, current, onDismiss = { qtyFor = null }) { q -> setQty(p, q); qtyFor = null }
+    }
+    qtyLine?.let { l ->
+        QtyDialog(l.desc, l.qty, onDismiss = { qtyLine = null }) { q ->
+            val i = cart.indexOf(l)
+            if (i >= 0) { if (q <= 0) cart.removeAt(i) else cart[i] = l.copy(qty = q.toDouble()) }
+            qtyLine = null
+        }
+    }
     transferLine?.let { l ->
         TransferSheet(statuses.filter { it.memberId != memberId }, l.name, onDismiss = { transferLine = null }) { to ->
             scope.launch { repo.transfer(l.entryIds.first(), to.memberId); snackbar.showSnackbar("${l.name} → ${to.nickname ?: to.name}") }
@@ -335,11 +363,18 @@ private fun TopRow(name: String, photoId: String?, st: MemberStatus?, onBack: ()
 private fun ProductGrid(
     products: List<Product>, favorites: List<Product>, lastLabel: String?, counts: Map<Long, Double>, modifier: Modifier,
     onTap: (Product) -> Unit, onLong: (Product) -> Unit, onCustom: () -> Unit, onRepeat: () -> Unit,
+    onMinus: (Product) -> Unit,
 ) {
-    val sortAlpha = cz.klubpos.ui.components.rememberSettings().flow.collectAsState().value.productSort == "ALPHA"
-    val products = remember(products, sortAlpha) {
-        if (sortAlpha) products.sortedBy { it.name.lowercase() }
-        else products.sortedWith(compareBy({ it.category.lowercase() }, { it.name.lowercase() }))
+    val repo = rememberRepo()
+    val scope = rememberCoroutineScope()
+    val appSettings = cz.klubpos.ui.components.rememberSettings()
+    val sort = appSettings.flow.collectAsState().value.productSort
+    val products = remember(products, sort) {
+        when (sort) {
+            "ALPHA" -> products.sortedBy { it.name.lowercase() }
+            "CUSTOM" -> products.sortedWith(compareBy({ it.sortOrder }, { it.name.lowercase() }))
+            else -> products.sortedWith(compareBy({ it.category.lowercase() }, { it.name.lowercase() }))
+        }
     }
     val categories = remember(products) { products.map { it.category }.distinct().sortedBy { it.lowercase() } }
     // Default view = everything; "★ Oblíbené" shows what this member usually has.
@@ -355,18 +390,37 @@ private fun ProductGrid(
             if (favorites.isNotEmpty()) CategoryPill("★ Oblíbené", KlubColors.Amber, cat == FAV) { cat = FAV }
             categories.forEach { c -> CategoryPill(c, categoryColor(c), cat == c) { cat = c } }
         }
+        val list = when (cat) { null -> products; FAV -> favorites; else -> products.filter { it.category == cat } }
+        // Hold & drag a key to move it (in "Vše"); hold without moving → exact quantity.
+        val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+        val reorder = cz.klubpos.ui.components.rememberGridReorderState(gridState)
+        val local = remember { mutableStateListOf<Product>() }
+        androidx.compose.runtime.LaunchedEffect(list) { if (reorder.draggingKey == null) { local.clear(); local.addAll(list) } }
         LazyVerticalGrid(
             GridCells.Adaptive(112.dp),
+            state = gridState,
+            modifier = Modifier.reorderableGrid(reorder,
+                canDrag = { k -> cat == null && k is Long },
+                onMove = { from, to ->
+                    val a = local.indexOfFirst { it.id == from }; val b = local.indexOfFirst { it.id == to }
+                    if (a >= 0 && b >= 0) local.add(b, local.removeAt(a))
+                },
+                onDrop = {
+                    val ids = local.map { it.id }
+                    scope.launch { repo.saveProductOrder(ids) }
+                    if (sort != "CUSTOM") appSettings.update { it.copy(productSort = "CUSTOM") }
+                },
+                onLongPress = { k -> local.firstOrNull { it.id == k }?.let(onLong) }),
             contentPadding = PaddingValues(12.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            val list = when (cat) { null -> products; FAV -> favorites; else -> products.filter { it.category == cat } }
-            itemsIndexed(list, key = { _, p -> p.id }) { i, p ->
-                ProductKey(p, counts[p.id] ?: 0.0, if (i == 0) Modifier.tourTarget("product_key") else Modifier,
-                    onTap = { onTap(p) }, onLong = { onLong(p) })
+            itemsIndexed(local, key = { _, p -> p.id }) { i, p ->
+                ProductKey(p, counts[p.id] ?: 0.0,
+                    (if (i == 0) Modifier.tourTarget("product_key") else Modifier).reorderItem(reorder, p.id),
+                    onTap = { onTap(p) }, onMinus = { onMinus(p) })
             }
-            item {
+            item(key = "custom") {
                 Box(Modifier.tourTarget("custom_amount").aspectRatio(1f).glass(RoundedCornerShape(22.dp), alpha = 0.03f)
                     .clickable(onClick = onCustom), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -393,7 +447,7 @@ private fun CategoryPill(label: String, color: Color?, selected: Boolean, onClic
 /** Big POS key: category colour, name, price. Count badge = how many today. Bounces on tap. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ProductKey(p: Product, count: Double, modifier: Modifier = Modifier, onTap: () -> Unit, onLong: () -> Unit) {
+private fun ProductKey(p: Product, count: Double, modifier: Modifier = Modifier, onTap: () -> Unit, onMinus: () -> Unit) {
     val haptic = LocalHapticFeedback.current
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -404,11 +458,7 @@ private fun ProductKey(p: Product, count: Double, modifier: Modifier = Modifier,
         modifier.aspectRatio(1f).scale(scale).glass(RoundedCornerShape(22.dp))
             // soft category glow from the top
             .background(Brush.verticalGradient(listOf(accent.copy(alpha = 0.28f), Color.Transparent), endY = 260f))
-            .combinedClickable(
-                interactionSource = interaction, indication = ripple(),
-                onClick = onTap,
-                onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onLong() },
-            )
+            .clickable(interactionSource = interaction, indication = ripple(), onClick = onTap)
     ) {
         if (p.imageId != null) {
             EncryptedImage(p.imageId, p.name, Modifier.fillMaxSize())
@@ -422,6 +472,10 @@ private fun ProductKey(p: Product, count: Double, modifier: Modifier = Modifier,
                 if (low) Box(Modifier.size(8.dp).clip(CircleShape).background(KlubColors.OldDebt))
             }
         }
+        if (count > 0) Box(Modifier.align(Alignment.TopStart).padding(4.dp).size(36.dp).clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.55f)).clickable(onClick = onMinus), contentAlignment = Alignment.Center) {
+            Icon(Icons.Default.Remove, "Ubrat", tint = Color.White, modifier = Modifier.size(20.dp))
+        }
         if (count > 0) Text(fmtQty(count),
             Modifier.align(Alignment.TopEnd).padding(6.dp).size(28.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)
                 .padding(top = 4.dp),
@@ -432,7 +486,7 @@ private fun ProductKey(p: Product, count: Double, modifier: Modifier = Modifier,
 @Composable
 private fun Receipt(
     st: MemberStatus?, cart: List<CartLine>, lines: List<ReceiptLine>, payments: List<LedgerEntry>, modifier: Modifier,
-    onCartPlus: (CartLine) -> Unit, onCartMinus: (CartLine) -> Unit,
+    onCartPlus: (CartLine) -> Unit, onCartMinus: (CartLine) -> Unit, onCartLong: (CartLine) -> Unit,
     onPlus: (ReceiptLine) -> Unit, onMinus: (ReceiptLine) -> Unit, onLong: (ReceiptLine) -> Unit,
 ) {
     @Composable
@@ -449,7 +503,8 @@ private fun Receipt(
                 start = SwipeAction(Icons.Default.Add, "+1", KlubColors.PaidToday) { onCartPlus(l) },
                 end = SwipeAction(Icons.Default.Remove, "−1", KlubColors.OldDebt) { onCartMinus(l) },
             ) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().combinedClickable(onClick = {}, onLongClick = { onCartLong(l) })
+                    .padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton({ onCartMinus(l) }) { Icon(Icons.Default.Remove, "Ubrat", tint = KlubColors.Muted) }
                     Text(fmtQty(l.qty), style = Display.copy(fontSize = 18.sp), color = KlubColors.Gold, modifier = Modifier.width(32.dp),
                         textAlign = TextAlign.Center)
@@ -494,13 +549,15 @@ private fun Receipt(
 }
 
 /**
- * Bottom bar. Order in progress → "Na futro" (write to tab, back to members) + "Zaplatit".
- * Nothing new → "Hotovo" + "Zaplatit" (if there is something to pay).
+ * Bottom bar:
+ *  Zaplatit – write the order, then pay
+ *  Na futro – write the order to the tab and stay (keep ordering)
+ *  Budiž    – write the order and go back to the members
  */
 @Composable
 private fun OrderBar(
     st: MemberStatus?, cartTotal: Long, cartQty: Double, expanded: Boolean,
-    onFutro: () -> Unit, onPay: () -> Unit, onDone: () -> Unit, onOpen: () -> Unit,
+    onPay: () -> Unit, onFutro: () -> Unit, onBudiz: () -> Unit, onOpen: () -> Unit,
 ) {
     val hasCart = cartQty > 0
     val canPay = hasCart || (st?.balance ?: 0) > 0
@@ -510,28 +567,28 @@ private fun OrderBar(
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(enabled = !expanded, onClick = onOpen).padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(if (hasCart) "Objednávka · ${fmtQty(cartQty)} ks" else if (expanded) "Nic nového" else "Účet ▴",
+                Text(if (hasCart) "Objednávka · ${fmtQty(cartQty)} ks" + (if (!expanded) "  ▴" else "") else if (expanded) "Nic nového" else "Účet ▴",
                     style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(if (hasCart) "+ ${Credits.format(cartTotal)}" else "dluh ${Credits.format((st?.balance ?: 0).coerceAtLeast(0))}",
                     style = Display.copy(fontSize = 26.sp), color = if (hasCart) KlubColors.Gold else MaterialTheme.colorScheme.onSurface)
             }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            // Pay (secondary)
-            Box(Modifier.weight(1f).height(60.dp).tourTarget("pay_button")
-                .then(if (canPay) Modifier.glass(RoundedCornerShape(16.dp), alpha = 0.08f) else Modifier.glass(RoundedCornerShape(16.dp), alpha = 0.02f))
-                .clickable(enabled = canPay, onClick = onPay), contentAlignment = Alignment.Center) {
-                Text("Zaplatit", color = if (canPay) KlubColors.PaidToday else MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-            }
-            // Na futro (primary) / Hotovo
-            Box(Modifier.weight(1.4f).height(60.dp).tourTarget("futro_button").clip(RoundedCornerShape(16.dp))
-                .background(if (hasCart) KlubColors.GoldBrush else SolidColor(MaterialTheme.colorScheme.surfaceVariant))
-                .clickable(onClick = if (hasCart) onFutro else onDone), contentAlignment = Alignment.Center) {
-                Text(if (hasCart) "Na futro" else "Hotovo", color = if (hasCart) KlubColors.Ink else MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 19.sp))
-            }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            BarButton("Zaplatit", Modifier.weight(1f).tourTarget("pay_button"), canPay, KlubColors.PaidToday, filled = false, onClick = onPay)
+            BarButton("Na futro", Modifier.weight(1f).tourTarget("futro_button"), hasCart, KlubColors.Gold, filled = false, onClick = onFutro)
+            BarButton("Budiž", Modifier.weight(1.2f).tourTarget("budiz_button"), true, KlubColors.Gold, filled = true, onClick = onBudiz)
         }
+    }
+}
+
+@Composable
+private fun BarButton(label: String, modifier: Modifier, enabled: Boolean, color: Color, filled: Boolean, onClick: () -> Unit) {
+    Box(modifier.height(58.dp)
+        .then(if (filled && enabled) Modifier.clip(RoundedCornerShape(16.dp)).background(KlubColors.GoldBrush)
+              else Modifier.glass(RoundedCornerShape(16.dp), alpha = if (enabled) 0.08f else 0.02f))
+        .clickable(enabled = enabled, onClick = onClick), contentAlignment = Alignment.Center) {
+        Text(label, color = when { !enabled -> MaterialTheme.colorScheme.onSurfaceVariant; filled -> KlubColors.Ink; else -> color },
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 17.sp), maxLines = 1)
     }
 }
 
@@ -728,27 +785,29 @@ private fun CustomItemDialog(onDismiss: () -> Unit, onAdd: (String, Long) -> Uni
     )
 }
 
+/** Exact quantity: stepper + keypad. 0 removes the item. */
 @Composable
-private fun QtyPriceDialog(p: Product, onDismiss: () -> Unit, onConfirm: (Double, Long) -> Unit) {
-    var qty by remember { mutableStateOf(1) }
-    var price by remember { mutableStateOf(p.price.toString()) }
-    val pr = price.toLongOrNull()
+private fun QtyDialog(title: String, current: Double, onDismiss: () -> Unit, onConfirm: (Int) -> Unit) {
+    var qty by remember { mutableStateOf(current.toInt()) }
+    var fresh by remember { mutableStateOf(true) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(p.name) },
+        title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                    StepButton("−") { if (qty > 1) qty-- }
-                    Text("$qty", fontSize = 40.sp, fontWeight = FontWeight.Bold)
-                    StepButton("+") { qty++ }
+                    StepButton("−") { if (qty > 0) qty--; fresh = false }
+                    Text("$qty", style = Display.copy(fontSize = 44.sp))
+                    StepButton("+") { qty++; fresh = false }
                 }
-                OutlinedTextField(price, { price = it.filter(Char::isDigit) }, label = { Text("Cena / ks") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-                if (pr != null) Text("= ${Credits.format(pr * qty)}", fontWeight = FontWeight.Bold)
+                Keypad(Modifier.fillMaxWidth(),
+                    onDigit = { d -> qty = ((if (fresh) "" else qty.toString()) + d).trimStart('0').take(3).toIntOrNull() ?: 0; fresh = false },
+                    onBack = { qty = qty.toString().dropLast(1).toIntOrNull() ?: 0; fresh = false },
+                    onClear = { qty = 0; fresh = false })
+                if (qty == 0) Text("0 = odebrat z objednávky", color = KlubColors.OldDebt, style = MaterialTheme.typography.bodySmall)
             }
         },
-        confirmButton = { TextButton(enabled = pr != null, onClick = { onConfirm(qty.toDouble(), pr!!) }) { Text("Zapsat") } },
+        confirmButton = { TextButton({ onConfirm(qty) }) { Text("OK") } },
         dismissButton = { TextButton(onDismiss) { Text("Zrušit") } },
     )
 }

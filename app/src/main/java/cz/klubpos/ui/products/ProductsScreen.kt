@@ -71,17 +71,21 @@ fun ProductsScreen() {
 
     val settings = cz.klubpos.ui.components.rememberSettings()
     val cfg by settings.flow.collectAsState()
-    val byType = cfg.productSort != "ALPHA"
-    val sorted = remember(products, byType) {
-        if (byType) products.sortedWith(compareBy({ !it.active }, { it.category.lowercase() }, { it.name.lowercase() }))
-        else products.sortedWith(compareBy({ !it.active }, { it.name.lowercase() }))
+    val byType = cfg.productSort == "TYPE"
+    val sorted = remember(products, cfg.productSort) {
+        when (cfg.productSort) {
+            "TYPE" -> products.sortedWith(compareBy({ !it.active }, { it.category.lowercase() }, { it.name.lowercase() }))
+            "CUSTOM" -> products.sortedWith(compareBy({ !it.active }, { it.sortOrder }, { it.name.lowercase() }))
+            else -> products.sortedWith(compareBy({ !it.active }, { it.name.lowercase() }))
+        }
     }
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("Položky") },
             actions = {
-                cz.klubpos.ui.members.Segmented(listOf("A–Z", "Typ"), if (byType) 1 else 0) { i ->
-                    settings.update { it.copy(productSort = if (i == 0) "ALPHA" else "TYPE") }
+                val modes = listOf("ALPHA", "TYPE", "CUSTOM")
+                cz.klubpos.ui.members.Segmented(listOf("A–Z", "Typ", "Vlastní"), modes.indexOf(cfg.productSort).coerceAtLeast(0)) { i ->
+                    settings.update { it.copy(productSort = modes[i]) }
                 }
                 IconButton({ if (unlocked) showIo = true else askUnlock = Product(id = -1, name = "", price = 0) }) {
                     Icon(Icons.Default.UploadFile, "Import / vzor")

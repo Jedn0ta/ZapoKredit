@@ -74,6 +74,10 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
 
     suspend fun updateMember(m: Member) = db.members().update(m)
 
+    /** Persist drag & drop order of the main screen. */
+    suspend fun saveMemberOrder(ids: List<Long>) = db.withTransaction { ids.forEachIndexed { i, id -> db.members().setOrder(id, i) } }
+    suspend fun saveProductOrder(ids: List<Long>) = db.withTransaction { ids.forEachIndexed { i, id -> db.products().setOrder(id, i) } }
+
     suspend fun setMemberPhoto(memberId: Long, raw: ByteArray) {
         val m = db.members().get(memberId) ?: return
         val newId = images.save(raw)
