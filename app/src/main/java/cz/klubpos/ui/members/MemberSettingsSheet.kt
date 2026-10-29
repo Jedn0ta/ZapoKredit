@@ -155,7 +155,7 @@ fun MemberSettingsSheet(
             ToggleRow(vip, { vip = it }, "VIP", "zlatý rám, lesk podle náklonu tabletu") {
                 Box(Modifier.size(28.dp).clip(CircleShape).background(androidx.compose.ui.graphics.Brush.linearGradient(GoldMetal)))
             }
-            ToggleRow(elder, { elder = it }, "Elder", "starší člen klubu – odznak Cthulhu") {
+            ToggleRow(elder, { elder = it }, "Elder", "prastarý mystický rám s runami a odznak Cthulhu") {
                 CthulhuIcon(Modifier.size(28.dp))
             }
 

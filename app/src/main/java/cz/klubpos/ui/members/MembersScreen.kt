@@ -37,6 +37,7 @@ import cz.klubpos.ui.components.reorderItem
 import androidx.compose.foundation.clickable
 import cz.klubpos.ui.theme.glass
 import cz.klubpos.ui.theme.goldFrame
+import cz.klubpos.ui.theme.elderFrame
 import cz.klubpos.ui.components.MemberAvatar
 import cz.klubpos.ui.components.CthulhuIcon
 import cz.klubpos.ui.components.tileTint
@@ -226,9 +227,10 @@ private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected:
     Box(
         modifier.fillMaxWidth().aspectRatio(0.82f)
             .then(if (m.vip) Modifier.goldFrame(shape) else Modifier)
+            .then(if (m.elder) Modifier.elderFrame(shape, inset = if (m.vip) 6.dp else 0.dp) else Modifier)
             .clip(shape)
             .then(when {
-                m.vip -> Modifier
+                m.vip || m.elder -> Modifier
                 selected -> Modifier.border(BorderStroke(4.dp, KlubColors.Amber), shape)
                 m.inClub -> Modifier.border(BorderStroke(2.5.dp, Brush.linearGradient(listOf(KlubColors.InClub, KlubColors.Violet))), shape)
                 tileTint(m.tileColor) != null -> Modifier.border(1.5.dp, tileTint(m.tileColor)!!.copy(alpha = 0.7f), shape)

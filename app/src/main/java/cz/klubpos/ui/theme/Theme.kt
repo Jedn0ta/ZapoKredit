@@ -18,6 +18,7 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -194,4 +195,66 @@ fun Modifier.goldFrame(shape: Shape, width: Dp = 4.dp): Modifier = composed {
             ), style = Stroke(width = px * 2f))
             drawOutline(outline = outline, color = Color(0x66FFF4C2), style = Stroke(width = px * 0.35f))
         }
+}
+
+/** Ancient, eldritch palette: dark verdigris stone → sickly green glow → abyssal violet. */
+val ElderStone = listOf(
+    Color(0xFF0E1F1A), Color(0xFF1F4A3A), Color(0xFF3FA37A), Color(0xFF9BF2C4),
+    Color(0xFF3FA37A), Color(0xFF2A1F45), Color(0xFF0E1F1A),
+)
+
+/**
+ * Elder frame: carved stone border with runes along the edges and a faint otherworldly glow.
+ * Like the gold frame, the glow drifts with the device tilt (no automatic animation).
+ * [inset] lets it sit inside a VIP gold frame when a member is both.
+ */
+fun Modifier.elderFrame(shape: Shape, width: Dp = 4.dp, inset: Dp = 0.dp): Modifier = composed {
+    val tilt = cz.klubpos.ui.components.LocalTilt.current
+    this
+        .shadow(16.dp, shape, ambientColor = Color(0xFF3FA37A), spotColor = Color(0xFF6B4BB8))
+        .drawWithContent {
+            drawContent()
+            val w: Float = size.width
+            val h: Float = size.height
+            val ins: Float = inset.toPx()
+            val px: Float = width.toPx()
+            // dark vignette – feels old and deep
+            drawRect(Brush.radialGradient(listOf(Color.Transparent, Color(0x99050A08)),
+                center = Offset(w / 2f, h / 2f), radius = maxOf(w, h) * 0.75f))
+            val p: Float = (0.5f - tilt.x * 0.8f + tilt.y * 0.4f).coerceIn(-0.4f, 1.4f)
+            val band: Float = (w + h) * 0.35f
+            val brush = Brush.linearGradient(ElderStone, start = Offset(w * p - band, h * (1f - p) - band),
+                end = Offset(w * p + band, h * (1f - p) + band), tileMode = TileMode.Mirror)
+            val sub = androidx.compose.ui.geometry.Size(w - 2 * ins, h - 2 * ins)
+            val outline = shape.createOutline(sub, layoutDirection, this)
+            translate(ins, ins) {
+                drawOutline(outline = outline, brush = brush, style = Stroke(width = px * 2f))
+                // runes: small carved glyphs evenly spaced along the edges
+                val g = Color(0xCC9BF2C4)
+                val r: Float = px * 0.9f
+                val sw = Stroke(width = px * 0.32f)
+                val stepX: Float = sub.width / 6f
+                val stepY: Float = sub.height / 7f
+                for (i in 1..5) {
+                    rune(i, Offset(stepX * i, px * 0.6f), r, g, sw)
+                    rune(i + 3, Offset(stepX * i, sub.height - px * 0.6f), r, g, sw)
+                }
+                for (i in 1..6) {
+                    rune(i + 1, Offset(px * 0.6f, stepY * i), r, g, sw)
+                    rune(i + 5, Offset(sub.width - px * 0.6f, stepY * i), r, g, sw)
+                }
+                drawOutline(outline = outline, color = Color(0x553FA37A), style = Stroke(width = px * 0.3f))
+            }
+        }
+}
+
+/** Tiny made-up runes (lines and arcs) – enough to read as "carved symbols". */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.rune(k: Int, c: Offset, r: Float, color: Color, s: Stroke) {
+    when (k % 5) {
+        0 -> { drawLine(color, Offset(c.x, c.y - r), Offset(c.x, c.y + r), s.width); drawLine(color, Offset(c.x - r * 0.6f, c.y - r * 0.2f), Offset(c.x + r * 0.6f, c.y + r * 0.4f), s.width) }
+        1 -> { drawCircle(color, r * 0.55f, c, style = s); drawLine(color, Offset(c.x, c.y - r), Offset(c.x, c.y + r), s.width) }
+        2 -> { drawLine(color, Offset(c.x - r * 0.6f, c.y + r), Offset(c.x, c.y - r), s.width); drawLine(color, Offset(c.x, c.y - r), Offset(c.x + r * 0.6f, c.y + r), s.width) }
+        3 -> { drawArc(color, 200f, 220f, false, Offset(c.x - r * 0.7f, c.y - r * 0.7f), androidx.compose.ui.geometry.Size(r * 1.4f, r * 1.4f), style = s); drawCircle(color, s.width, c) }
+        else -> { drawLine(color, Offset(c.x - r * 0.6f, c.y - r * 0.6f), Offset(c.x + r * 0.6f, c.y + r * 0.6f), s.width); drawLine(color, Offset(c.x + r * 0.6f, c.y - r * 0.6f), Offset(c.x - r * 0.6f, c.y + r * 0.6f), s.width) }
+    }
 }
