@@ -1,0 +1,96 @@
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
+}
+
+android {
+    namespace = "cz.klubpos"
+    compileSdk = 34
+
+    defaultConfig {
+        applicationId = "cz.klubpos"
+        // minSdk 26 (Android 8.0): covers Android Keystore-backed EncryptedSharedPreferences,
+        // EncryptedFile and adaptive icons. Raise/lower once the target tablet is fixed.
+        minSdk = 26
+        targetSdk = 34
+        // CI passes these from the git tag (v1.2.3) and run number; local builds use the defaults.
+        versionCode = (project.findProperty("versionCode") as String?)?.toInt() ?: 1
+        versionName = (project.findProperty("versionName") as String?) ?: "0.1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        vectorDrawables { useSupportLibrary = true }
+
+        // Where the in-app updater looks for new releases (GitHub Releases, public repo).
+        buildConfigField("String", "UPDATE_REPO", "\"Jedn0ta/ZapoKredit\"")
+    }
+
+    // Release signing from environment (GitHub Actions secrets). The SAME key must sign every
+    // release, otherwise Android refuses to install the update over the existing app.
+    val ksPath = System.getenv("SIGNING_KEYSTORE_PATH")
+    signingConfigs {
+        if (ksPath != null) create("release") {
+            storeFile = file(ksPath)
+            storePassword = System.getenv("SIGNING_STORE_PASSWORD")
+            keyAlias = System.getenv("SIGNING_KEY_ALIAS")
+            keyPassword = System.getenv("SIGNING_KEY_PASSWORD")
+        }
+    }
+
+    buildTypes {
+        release {
+            // Without the release key (secrets not set yet) fall back to the debug key so the APK
+            // is still installable for testing. Such builds can't be updated by properly signed ones.
+            signingConfig = if (ksPath != null) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
+            isMinifyEnabled = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+    buildFeatures { compose = true; buildConfig = true }
+    packaging {
+        resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+    }
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
+dependencies {
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.activity.compose)
+
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.ui)
+    implementation(libs.androidx.ui.graphics)
+    implementation(libs.androidx.ui.tooling.preview)
+    implementation(libs.androidx.material3)
+    implementation(libs.androidx.material.icons.extended)
+    implementation(libs.androidx.navigation.compose)
+    debugImplementation(libs.androidx.ui.tooling)
+
+    // Encrypted Room: Room over SQLCipher.
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
+    implementation(libs.sqlcipher.android)
+    implementation(libs.androidx.sqlite.ktx)
+
+    // Keystore-backed storage for the DB passphrase.
+    implementation(libs.androidx.security.crypto)
+
+    // Images, QR generation, local upload server.
+    implementation(libs.coil.compose)
+    implementation(libs.zxing.core)
+    implementation(libs.nanohttpd)
+}

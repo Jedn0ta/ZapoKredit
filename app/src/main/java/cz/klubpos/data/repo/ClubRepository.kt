@@ -1,0 +1,214 @@
+package cz.klubpos.data.repo
+
+import androidx.room.withTransaction
+import cz.klubpos.core.crypto.ImageStore
+import cz.klubpos.data.db.AppDatabase
+import cz.klubpos.data.db.entity.EntryType
+import cz.klubpos.data.db.entity.LedgerEntry
+import cz.klubpos.data.db.entity.Member
+import cz.klubpos.data.db.entity.Product
+import cz.klubpos.data.db.entity.ShoppingItem
+import cz.klubpos.data.db.entity.StockMovement
+import cz.klubpos.data.db.entity.Visit
+import cz.klubpos.domain.BusinessDay
+import cz.klubpos.domain.MemberStatus
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import kotlin.math.ceil
+
+class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
+
+    // ---------- Members ----------
+
+    /** [dayStart] = start of the current business day; the ViewModel refreshes it when the day rolls over. */
+    fun memberStatuses(dayStart: Long = BusinessDay.startMillis()): Flow<List<MemberStatus>> =
+        db.members().observeSummaries(dayStart).map { rows -> rows.map(MemberStatus::from) }
+
+    fun member(id: Long) = db.members().observe(id)
+    fun ledger(memberId: Long) = db.ledger().observeForMember(memberId)
+
+    suspend fun addMember(name: String, nickname: String?): Long =
+        db.members().insert(Member(name = name.trim(), nickname = nickname?.trim()?.ifBlank { null }))
+
+    suspend fun updateMember(m: Member) = db.members().update(m)
+
+    suspend fun setMemberPhoto(memberId: Long, raw: ByteArray) {
+        val m = db.members().get(memberId) ?: return
+        val newId = images.save(raw)
+        db.members().update(m.copy(photoId = newId))
+        images.delete(m.photoId)
+    }
+
+    // ---------- Visits ("otevřený účet") ----------
+
+    suspend fun openVisit(memberId: Long): Long =
+        db.visits().openFor(memberId)?.id ?: db.visits().insert(Visit(memberId = memberId))
+
+    suspend fun closeVisit(memberId: Long) {
+        db.visits().openFor(memberId)?.let { db.visits().close(it.id, System.currentTimeMillis()) }
+    }
+
+    /** End of night: everybody leaves (debts stay on the tab). */
+    suspend fun closeAllVisits() = db.visits().closeAll(System.currentTimeMillis())
+
+    // ---------- Tab ----------
+
+    /** Write a product to the member's tab. Opens a visit automatically and lowers stock. */
+    suspend fun chargeProduct(memberId: Long, productId: Long, qty: Double = 1.0, priceOverride: Long? = null) =
+        db.withTransaction {
+            val p = db.products().get(productId) ?: error("Produkt nenalezen")
+            val unit = priceOverride ?: p.price
+            val visitId = openVisit(memberId)
+            val entryId = db.ledger().insert(
+                LedgerEntry(
+                    memberId = memberId, type = EntryType.CHARGE, description = p.name,
+                    productId = p.id, quantity = qty, unitPrice = unit,
+                    amount = Math.round(unit * qty), visitId = visitId,
+                )
+            )
+            if (p.trackStock) {
+                db.products().adjustStock(p.id, -qty)
+                db.stock().insert(StockMovement(productId = p.id, delta = -qty, reason = "SALE", ledgerEntryId = entryId))
+                suggestIfLow(p.id)
+            }
+            entryId
+        }
+
+    /** Free-form item: bartender types a description and a price. */
+    suspend fun chargeCustom(memberId: Long, description: String, amount: Long) = db.withTransaction {
+        require(amount > 0) { "Částka musí být kladná" }
+        val visitId = openVisit(memberId)
+        db.ledger().insert(
+            LedgerEntry(
+                memberId = memberId, type = EntryType.CHARGE,
+                description = description.ifBlank { "Vlastní položka" },
+                unitPrice = amount, amount = amount, visitId = visitId,
+            )
+        )
+    }
+
+    suspend fun pay(memberId: Long, amount: Long, closeVisitAfter: Boolean) = db.withTransaction {
+        require(amount > 0) { "Částka musí být kladná" }
+        db.ledger().insert(
+            LedgerEntry(
+                memberId = memberId, type = EntryType.PAYMENT, description = "Platba",
+                unitPrice = amount, amount = -amount, visitId = db.visits().openFor(memberId)?.id,
+            )
+        )
+        if (closeVisitAfter) closeVisit(memberId)
+    }
+
+    suspend fun balance(memberId: Long) = db.ledger().balance(memberId)
+
+    /** Storno: adds a reversing entry (ledger stays auditable) and returns stock. */
+    suspend fun void(entryId: Long) = db.withTransaction {
+        val e = db.ledger().get(entryId) ?: return@withTransaction
+        if (e.voidsEntryId != null || db.ledger().voidCount(e.id) > 0) return@withTransaction
+        db.ledger().insert(
+            e.copy(
+                id = 0, amount = -e.amount, description = "Storno: ${e.description}",
+                voidsEntryId = e.id, createdAt = System.currentTimeMillis(),
+            )
+        )
+        val pid = e.productId
+        if (pid != null && db.products().get(pid)?.trackStock == true) {
+            db.products().adjustStock(pid, e.quantity)
+            db.stock().insert(StockMovement(productId = pid, delta = e.quantity, reason = "VOID", ledgerEntryId = e.id))
+        }
+    }
+
+    // ---------- Products & stock ----------
+
+    fun activeProducts() = db.products().observeActive()
+    fun allProducts() = db.products().observeAll()
+
+    suspend fun saveProduct(p: Product): Long =
+        if (p.id == 0L) db.products().insert(p) else { db.products().update(p); p.id }
+
+    suspend fun setProductImage(productId: Long, raw: ByteArray) {
+        val p = db.products().get(productId) ?: return
+        val newId = images.save(raw, maxSide = 256)
+        db.products().update(p.copy(imageId = newId))
+        images.delete(p.imageId)
+    }
+
+    /** Goods arrived (naskladnění). */
+    suspend fun receiveStock(productId: Long, qty: Double) = db.withTransaction {
+        db.products().adjustStock(productId, qty)
+        db.stock().insert(StockMovement(productId = productId, delta = qty, reason = "PURCHASE"))
+    }
+
+    /** Physical count (inventura): sets the absolute amount and logs the difference. */
+    suspend fun setCountedStock(productId: Long, counted: Double) = db.withTransaction {
+        val p = db.products().get(productId) ?: return@withTransaction
+        val diff = counted - p.stockQty
+        if (diff != 0.0) {
+            db.products().adjustStock(productId, diff)
+            db.stock().insert(StockMovement(productId = productId, delta = diff, reason = "INVENTORY"))
+        }
+        suggestIfLow(productId)
+    }
+
+    // ---------- Shopping list ----------
+
+    fun shoppingList() = db.shopping().observeAll()
+
+    private fun suggestedQty(p: Product): Double =
+        if (p.reorderQty > 0) p.reorderQty
+        else ceil((p.minStock * 2 - p.stockQty).coerceAtLeast(1.0))
+
+    private suspend fun suggestIfLow(productId: Long) {
+        val p = db.products().get(productId) ?: return
+        if (!p.active || !p.trackStock || p.stockQty > p.minStock) return
+        if (db.shopping().openForProduct(p.id) != null) return
+        db.shopping().insert(ShoppingItem(productId = p.id, name = p.name, quantity = suggestedQty(p), unit = p.unit))
+    }
+
+    /** Adds every product under its minimum that isn't on the list yet. Returns how many were added. */
+    suspend fun generateShoppingList(): Int = db.withTransaction {
+        var added = 0
+        for (p in db.products().lowStock()) {
+            if (db.shopping().openForProduct(p.id) == null) {
+                db.shopping().insert(ShoppingItem(productId = p.id, name = p.name, quantity = suggestedQty(p), unit = p.unit))
+                added++
+            }
+        }
+        added
+    }
+
+    suspend fun addShoppingItem(name: String, qty: Double, unit: String) =
+        db.shopping().insert(ShoppingItem(name = name.trim(), quantity = qty, unit = unit))
+
+    /**
+     * Ticking an item as bought; when [receive] is true and it is linked to a product,
+     * the purchased quantity is added to stock straight away.
+     */
+    suspend fun setShoppingDone(item: ShoppingItem, done: Boolean, receive: Boolean) = db.withTransaction {
+        db.shopping().update(item.copy(done = done))
+        if (done && receive && item.productId != null) receiveStock(item.productId, item.quantity)
+    }
+
+    suspend fun updateShoppingQty(item: ShoppingItem, qty: Double) = db.shopping().update(item.copy(quantity = qty))
+    suspend fun deleteShoppingItem(id: Long) = db.shopping().delete(id)
+    suspend fun clearBought() = db.shopping().clearDone()
+
+    // ---------- Demo data ----------
+
+    suspend fun seedIfEmpty() {
+        if (db.members().count() > 0) return
+        listOf(
+            Product(name = "Pivo 10°", category = "Pivo", price = 45, unit = "ks", stockQty = 40.0, minStock = 20.0, reorderQty = 50.0),
+            Product(name = "Pivo 12°", category = "Pivo", price = 55, unit = "ks", stockQty = 12.0, minStock = 20.0, reorderQty = 50.0),
+            Product(name = "Nealko pivo", category = "Pivo", price = 40, unit = "ks", stockQty = 8.0, minStock = 6.0),
+            Product(name = "Víno bílé 0,2", category = "Víno", price = 60, unit = "l", trackStock = false),
+            Product(name = "Rum 4 cl", category = "Lihoviny", price = 70, trackStock = false),
+            Product(name = "Kofola", category = "Nealko", price = 35, unit = "ks", stockQty = 24.0, minStock = 12.0),
+            Product(name = "Minerálka", category = "Nealko", price = 30, unit = "ks", stockQty = 5.0, minStock = 12.0),
+            Product(name = "Brambůrky", category = "Jídlo", price = 40, unit = "ks", stockQty = 10.0, minStock = 5.0),
+            Product(name = "Utopenec", category = "Jídlo", price = 65, unit = "ks", stockQty = 6.0, minStock = 4.0),
+        ).forEach { db.products().insert(it) }
+        listOf("Jan Novák" to "Honza", "Petr Svoboda" to null, "Marie Dvořáková" to "Mája",
+            "Karel Černý" to "Kája", "Eva Procházková" to null, "Tomáš Veselý" to "Tom")
+            .forEach { (n, nick) -> addMember(n, nick) }
+    }
+}
