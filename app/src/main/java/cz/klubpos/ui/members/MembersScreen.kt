@@ -244,7 +244,7 @@ private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected:
     compact: Boolean = false, horizontal: Boolean = false, onClick: () -> Unit) {
     val shape = RoundedCornerShape(24.dp)
     Box(
-        modifier.fillMaxWidth().aspectRatio(if (horizontal) 2.3f else 0.82f)
+        modifier.fillMaxWidth().aspectRatio(if (horizontal) 1.45f else 0.82f)
             // Elder (platinum) outranks VIP (gold): platinum outside, gold just inside when both
             .then(if (m.elder) Modifier.platinumFrame(shape) else Modifier)
             .then(if (m.vip) Modifier.padding(if (m.elder) 5.dp else 0.dp).goldFrame(if (m.elder) RoundedCornerShape(20.dp) else shape) else Modifier)
@@ -262,21 +262,24 @@ private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected:
             .clickable(onClick = onClick)
     ) {
         if (horizontal) {
-            // Tablet: picture on the left, big centred name, amount top-right
-            Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(
-                (tileTint(m.tileColor) ?: KlubColors.SurfaceHigh).copy(alpha = 0.35f), KlubColors.Surface.copy(alpha = 0.9f)))))
-            Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-                MemberAvatar(m.photoId, m.avatar, m.name, tileTint(m.tileColor),
-                    Modifier.fillMaxHeight().aspectRatio(1f), textSize = if (compact) 26 else 36)
-                Column(Modifier.weight(1f).padding(horizontal = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(m.nickname ?: m.name, color = Color.White, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        style = (if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.headlineSmall)
-                            .copy(fontWeight = FontWeight.Bold),
-                        maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    if (m.inClub) Text("In The House", color = KlubColors.InClub, style = MaterialTheme.typography.labelMedium)
-                }
+            // Tablet: picture fills the tile, big name centred over it
+            MemberAvatar(m.photoId, m.avatar, m.name, tileTint(m.tileColor), Modifier.fillMaxSize(), textSize = if (compact) 30 else 44)
+            tileTint(m.tileColor)?.let { t ->
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(t.copy(alpha = 0.25f), Color.Transparent, t.copy(alpha = 0.3f)))))
             }
-            if (!m.inClub) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)))
+            // darken the middle band so the name is always readable
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(
+                Color.Black.copy(alpha = 0.10f), Color.Black.copy(alpha = 0.55f), Color.Black.copy(alpha = 0.65f)))))
+            if (!m.inClub) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)))
+            Column(Modifier.align(Alignment.Center).fillMaxWidth().padding(horizontal = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(m.nickname ?: m.name, color = Color.White, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    style = (if (compact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium).copy(
+                        fontWeight = FontWeight.Bold,
+                        shadow = androidx.compose.ui.graphics.Shadow(Color.Black, androidx.compose.ui.geometry.Offset(0f, 2f), 8f)),
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (m.inClub) Text("In The House", color = KlubColors.InClub, style = MaterialTheme.typography.labelLarge)
+            }
         } else {
         MemberAvatar(m.photoId, m.avatar, m.name, tileTint(m.tileColor), Modifier.fillMaxSize(), textSize = if (compact) 30 else 44)
         // Glass tint of the member's colour
@@ -453,7 +456,7 @@ private fun MemberGrid(
             onDrop = { onSaveOrder(local.map { it.memberId }) },
             onLongPress = { key -> local.firstOrNull { it.memberId == key }?.let(onActions) },
             onDropAt = onDropAt?.let { f -> { key, pos -> f(key as Long, pos) } }),
-        columns = GridCells.Adaptive(if (horizontal) (tileDp * 2).dp else tileDp.dp),
+        columns = GridCells.Adaptive(if (horizontal) (tileDp * 1.45f).dp else tileDp.dp),
         contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
         horizontalArrangement = Arrangement.spacedBy(gap),
         verticalArrangement = Arrangement.spacedBy(gap),

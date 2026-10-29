@@ -111,9 +111,11 @@ val TOUR_STEPS = listOf(
     TourStep(TourScreen.MEMBER, "history", "Historie", "Vpravo nahoře je dnešní útrata a celkový dluh. Klepnutím otevřeš historii – co a kdy. Starší záznam stornuješ tažením doleva."),
 
     TourStep(TourScreen.INVENTORY, "stock_row", "Sklad",
-        "Sklad je jako inventář ve hře: červený rám = dochází, zlatý = je toho dost. Klepnutím na slot naskladníš, uděláš inventuru nebo pošleš do nákupu.", Gesture.TAP),
+        "Červené číslo = dochází. Klepnutím zadáš skutečný stav (inventura).", Gesture.TAP),
     TourStep(TourScreen.INVENTORY, "kegs", "Sudy",
         "U každého piva vidíš, kolik zbývá, kdy byl sud naražen a kolik se natočilo. „Narazit nový“ zapíše výměnu sudu, „Objednat“ zavolá nebo napíše dodavateli."),
+    TourStep(TourScreen.INVENTORY, "stock_row", "Naskladnit / do nákupu",
+        "Táhni doprava = naskladnit dovezené zboží. Doleva = přidat na nákupní seznam.", Gesture.SWIPE_RIGHT),
     TourStep(TourScreen.SHOPPING, "autofill", "Nákupní seznam",
         "Tímto tlačítkem doplníš vše, co dochází, i s navrženým množstvím. Vedlejším tlačítkem seznam odešleš (WhatsApp, SMS, e-mail) – rozdělený podle kategorií."),
     TourStep(TourScreen.SHOPPING, "shopping_row", "Koupeno",
