@@ -37,6 +37,9 @@ import cz.klubpos.ui.components.reorderItem
 import androidx.compose.foundation.clickable
 import cz.klubpos.ui.theme.glass
 import cz.klubpos.ui.theme.goldFrame
+import cz.klubpos.ui.components.MemberAvatar
+import cz.klubpos.ui.components.CthulhuIcon
+import cz.klubpos.ui.components.tileTint
 import cz.klubpos.ui.theme.GoldMetal
 import cz.klubpos.ui.theme.Grotesk
 import androidx.compose.ui.draw.shadow
@@ -166,14 +169,10 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
     }
 
     actionsFor?.let { m ->
-        QuickActionsSheet(m,
+        MemberSettingsSheet(m, pages,
             onDismiss = { actionsFor = null },
-            onToggleVisit = { scope.launch { if (m.inClub) repo.closeVisit(m.memberId) else repo.openVisit(m.memberId) }; actionsFor = null },
             onPayAll = { payAllFor = m; actionsFor = null },
-            onPhoto = { photoFor = m; actionsFor = null },
-            onEdit = { onEditMember(m.memberId); actionsFor = null },
-            onVip = { scope.launch { repo.setVip(m.memberId, !m.vip) }; actionsFor = null },
-            onMove = if (pages.size > 1) ({ moveFor = m; actionsFor = null }) else null,
+            onMoveToPage = { i -> scope.launch { repo.setMemberPage(m.memberId, i); pager.animateScrollToPage(i) }; actionsFor = null },
         )
     }
     payAllFor?.let { m ->
@@ -232,11 +231,16 @@ private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected:
                 m.vip -> Modifier
                 selected -> Modifier.border(BorderStroke(4.dp, KlubColors.Amber), shape)
                 m.inClub -> Modifier.border(BorderStroke(2.5.dp, Brush.linearGradient(listOf(KlubColors.InClub, KlubColors.Violet))), shape)
+                tileTint(m.tileColor) != null -> Modifier.border(1.5.dp, tileTint(m.tileColor)!!.copy(alpha = 0.7f), shape)
                 else -> Modifier.border(1.dp, KlubColors.Hairline, shape)
             })
             .clickable(onClick = onClick)
     ) {
-        EncryptedImage(m.photoId, m.name, Modifier.fillMaxSize(), textSize = 44)
+        MemberAvatar(m.photoId, m.avatar, m.name, tileTint(m.tileColor), Modifier.fillMaxSize(), textSize = if (compact) 30 else 44)
+        // Glass tint of the member's colour
+        tileTint(m.tileColor)?.let { t ->
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(t.copy(alpha = 0.28f), Color.Transparent, t.copy(alpha = 0.35f)))))
+        }
         // Absent members are dimmed so present ones pop out.
         if (!m.inClub) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)))
         // Name over gradient
@@ -252,9 +256,9 @@ private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected:
         }
         AmountBadge(m, Modifier.align(Alignment.TopEnd).padding(8.dp))
         Column(Modifier.align(Alignment.TopStart).padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (m.vip) Box(Modifier.size(30.dp).shadow(8.dp, CircleShape, ambientColor = KlubColors.Gold, spotColor = KlubColors.Gold)
-                .clip(CircleShape).background(Brush.linearGradient(GoldMetal)), contentAlignment = Alignment.Center) {
-                Text("♛", color = Color(0xFF4A3008), fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            if (m.elder) Box(Modifier.size(if (compact) 26.dp else 32.dp).clip(CircleShape).glass(CircleShape, alpha = 0.18f)
+                .background(Color(0x991B3A2E)).padding(4.dp), contentAlignment = Alignment.Center) {
+                CthulhuIcon(Modifier.fillMaxSize())
             }
             if (newbie) Text("NOVÁČEK", Modifier.clip(RoundedCornerShape(8.dp))
                 .background(Brush.linearGradient(listOf(KlubColors.PaidToday, Color(0xFF2BB673)))).padding(horizontal = 7.dp, vertical = 3.dp),

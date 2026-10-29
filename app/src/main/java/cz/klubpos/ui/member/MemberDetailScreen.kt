@@ -250,7 +250,7 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            TopRow(member?.nickname ?: member?.name ?: "", member?.photoId, st,
+            TopRow(member?.nickname ?: member?.name ?: "", member?.photoId, st, member?.avatar,
                 onBack = back, onName = { showEdit = true }, onHistory = { showHistory = true })
             val limit = settings.debtLimit
             if (limit > 0 && st != null && st.balance >= limit) {
@@ -337,13 +337,13 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
 private data class CartLine(val product: Product?, val desc: String, val unitPrice: Long, val qty: Double)
 
 @Composable
-private fun TopRow(name: String, photoId: String?, st: MemberStatus?, onBack: () -> Unit, onName: () -> Unit, onHistory: () -> Unit) {
+private fun TopRow(name: String, photoId: String?, st: MemberStatus?, avatar: String?, onBack: () -> Unit, onName: () -> Unit, onHistory: () -> Unit) {
     Row(Modifier.fillMaxWidth().height(68.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Zpět") }
         Row(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable(onClick = onName).padding(6.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Box {
-                EncryptedImage(photoId, name, Modifier.size(44.dp).clip(CircleShape), textSize = 16)
+                cz.klubpos.ui.components.MemberAvatar(photoId, avatar, name, null, Modifier.size(44.dp).clip(CircleShape), textSize = 16)
                 if (st?.inClub == true) Box(Modifier.align(Alignment.BottomEnd).size(12.dp).clip(CircleShape).background(KlubColors.InClub))
             }
             Spacer(Modifier.width(12.dp))

@@ -22,6 +22,14 @@ data class Member(
     @androidx.room.ColumnInfo(defaultValue = "0") val vip: Boolean = false,
     /** Which card (tab) of the main screen the member lives on. */
     @androidx.room.ColumnInfo(defaultValue = "0") val page: Int = 0,
+    /** Glass tint of the tile: index into the tile palette, -1 = default. */
+    @androidx.room.ColumnInfo(defaultValue = "-1") val tileColor: Int = -1,
+    /** Elder of the club – shown with the Cthulhu badge. */
+    @androidx.room.ColumnInfo(defaultValue = "0") val elder: Boolean = false,
+    @androidx.room.ColumnInfo(defaultValue = "''") val phone: String = "",
+    @androidx.room.ColumnInfo(defaultValue = "''") val email: String = "",
+    /** Built-in gamer avatar id (used when there is no photo). */
+    @androidx.room.ColumnInfo(defaultValue = "NULL") val avatar: String? = null,
 )
 
 @Entity(tableName = "products")

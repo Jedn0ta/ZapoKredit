@@ -165,28 +165,33 @@ val GoldMetal = listOf(
 )
 
 /**
- * Real-looking gold frame: thick metallic gradient border with a slowly travelling glint,
- * plus a warm outer glow. Used for VIP members.
+ * Real-looking gold frame. The highlight moves with the device tilt (gravity sensor), so the
+ * metal catches the light as the tablet is moved – no automatic animation.
+ * Tilt is read only in the draw phase → cheap, no recomposition.
  */
 fun Modifier.goldFrame(shape: Shape, width: Dp = 4.dp): Modifier = composed {
-    val t = rememberInfiniteTransition(label = "gold")
-    val shift: Float by t.animateFloat(
-        initialValue = 0f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(3200, easing = LinearEasing)), label = "glint",
-    )
+    val tilt = cz.klubpos.ui.components.LocalTilt.current
     this
-        .shadow(18.dp, shape, ambientColor = Color(0xFFF5C451), spotColor = Color(0xFFF5C451))
+        .shadow(14.dp, shape, ambientColor = Color(0xFFF5C451), spotColor = Color(0xFFF5C451))
         .drawWithContent {
             drawContent()
             val w: Float = size.width
             val h: Float = size.height
-            val off: Float = (shift * 2f - 0.5f) * (w + h)
+            // light position along the diagonal follows the tilt (x: left/right, y: towards/away)
+            val p: Float = (0.5f + tilt.x * 0.9f - tilt.y * 0.5f).coerceIn(-0.4f, 1.4f)
+            val cx: Float = w * p
+            val cy: Float = h * p
+            val band: Float = (w + h) * 0.45f
             val brush = Brush.linearGradient(
-                colors = GoldMetal, start = Offset(off - w, off - h), end = Offset(off, off), tileMode = TileMode.Mirror,
+                colors = GoldMetal, start = Offset(cx - band, cy - band), end = Offset(cx + band, cy + band), tileMode = TileMode.Mirror,
             )
             val px: Float = width.toPx()
             val outline = shape.createOutline(size, layoutDirection, this)
             drawOutline(outline = outline, brush = brush, style = Stroke(width = px * 2f))
-            drawOutline(outline = outline, color = Color(0x99FFF4C2), style = Stroke(width = px * 0.35f))
+            // bright specular spot on the frame
+            drawOutline(outline = outline, brush = Brush.radialGradient(
+                listOf(Color(0xCCFFFBE6), Color.Transparent), center = Offset(cx, cy), radius = (w + h) * 0.22f,
+            ), style = Stroke(width = px * 2f))
+            drawOutline(outline = outline, color = Color(0x66FFF4C2), style = Stroke(width = px * 0.35f))
         }
 }

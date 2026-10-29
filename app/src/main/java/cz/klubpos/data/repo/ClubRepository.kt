@@ -84,6 +84,14 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
 
     suspend fun updateMember(m: Member) = db.members().update(m)
 
+    suspend fun memberOnce(id: Long) = db.members().get(id)
+
+    suspend fun removeMemberPhoto(memberId: Long) {
+        val m = db.members().get(memberId) ?: return
+        images.delete(m.photoId)
+        db.members().update(m.copy(photoId = null))
+    }
+
     suspend fun setVip(memberId: Long, vip: Boolean) { db.members().get(memberId)?.let { db.members().update(it.copy(vip = vip)) } }
 
     /** Persist drag & drop order of the main screen. */

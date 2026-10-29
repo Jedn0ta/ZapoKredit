@@ -122,6 +122,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 CompositionLocalProvider(LocalTour provides tour) {
+                  cz.klubpos.ui.components.TiltProvider {
                     AppBackground {
                         Box(Modifier.fillMaxSize().pointerInput(Unit) {
                             awaitPointerEventScope {
@@ -134,6 +135,7 @@ class MainActivity : ComponentActivity() {
                             TourOverlay(tour)
                         }
                     }
+                  }
                 }
             }
         }
