@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LocalBar
@@ -93,7 +95,7 @@ class MainActivity : ComponentActivity() {
         if (BuildConfig.IS_KEY_APP) {
             // Owner's phone: the key app only (no database, no POS).
             setContent { KlubTheme { AppBackground {
-                Box(Modifier.fillMaxSize().windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing)) {
+                Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                     cz.klubpos.ui.keyapp.KeyApp()
                 }
             } } }
@@ -133,7 +135,7 @@ class MainActivity : ComponentActivity() {
                         // Keep all content clear of the status bar, navigation bar and display cutouts
                         // (the backdrop still draws edge to edge behind them).
                         Box(Modifier.fillMaxSize()
-                            .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing)
+                            .windowInsetsPadding(WindowInsets.safeDrawing)
                             .pointerInput(Unit) {
                             awaitPointerEventScope {
                                 while (true) { awaitPointerEvent(PointerEventPass.Initial); lastTouch = System.currentTimeMillis() }
