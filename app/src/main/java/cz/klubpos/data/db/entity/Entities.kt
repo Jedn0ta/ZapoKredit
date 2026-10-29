@@ -50,7 +50,27 @@ data class Product(
     @androidx.room.ColumnInfo(defaultValue = "NULL") val kegGroup: String? = null,
     /** Millilitres per serving taken from the keg (500 = velké, 300 = malé). */
     @androidx.room.ColumnInfo(defaultValue = "0") val pourMl: Int = 0,
-)
+    /** Happy hour: promo price (credits), null = no promo. */
+    @androidx.room.ColumnInfo(defaultValue = "NULL") val promoPrice: Long? = null,
+    /** Days bitmask: Mon=1, Tue=2, Wed=4 … Sun=64. */
+    @androidx.room.ColumnInfo(defaultValue = "127") val promoDays: Int = 127,
+    /** Minutes from midnight; to < from means it runs past midnight. */
+    @androidx.room.ColumnInfo(defaultValue = "1020") val promoFrom: Int = 17 * 60,
+    @androidx.room.ColumnInfo(defaultValue = "1200") val promoTo: Int = 20 * 60,
+) {
+    /** Is the promo running at [now]? For overnight promos the day is the day it started. */
+    fun promoActive(now: java.time.LocalDateTime = java.time.LocalDateTime.now()): Boolean {
+        if (promoPrice == null) return false
+        val m = now.hour * 60 + now.minute
+        fun dayOn(d: java.time.DayOfWeek) = promoDays and (1 shl (d.value - 1)) != 0
+        return if (promoFrom <= promoTo) m in promoFrom until promoTo && dayOn(now.dayOfWeek)
+        else (m >= promoFrom && dayOn(now.dayOfWeek)) || (m < promoTo && dayOn(now.dayOfWeek.minus(1)))
+    }
+
+    /** Price charged right now (happy hour aware). */
+    fun currentPrice(now: java.time.LocalDateTime = java.time.LocalDateTime.now()): Long =
+        if (promoActive(now)) promoPrice!! else price
+}
 
 /** One stay in the club = "otevřený účet". closedAt == null means the member is in the club now. */
 @Entity(

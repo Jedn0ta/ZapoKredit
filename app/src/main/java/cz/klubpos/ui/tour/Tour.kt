@@ -80,6 +80,8 @@ val TOUR_STEPS = listOf(
         Gesture.TAP),
     TourStep(TourScreen.MEMBERS, "member_tile", "Rychlé akce",
         "Podrž a pusť: nastavení člena – barva dlaždice, VIP, Elder, kontakt, fotka nebo herní avatar, přesun na kartu, smazání.\nPodrž a táhni: přesuneš dlaždici jinam (pořadí se uloží).", Gesture.HOLD),
+    TourStep(TourScreen.MEMBERS, null, "Happy hour",
+        "Když běží akční cena, objeví se tu zlatý pruh s tím, co je v akci a do kdy. Akci nastavíš u položky v Položkách (cena, dny, čas)."),
     TourStep(TourScreen.MEMBERS, "keg_strip", "Stav sudů",
         "Sudy nahoře ukazují odhadovanou hladinu piva. Každé načepované pivo ji sníží podle objemu (0,5 / 0,3 l). Nový sud narazíš ve Skladu."),
     TourStep(TourScreen.MEMBERS, null, "Karty členů",

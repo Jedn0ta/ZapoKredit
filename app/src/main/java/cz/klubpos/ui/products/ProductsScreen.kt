@@ -116,7 +116,11 @@ fun ProductsScreen() {
                             Text(if (p.trackStock) "sklad ${fmtQty(p.stockQty)} ${p.unit} · min ${fmtQty(p.minStock)}" else "bez skladové evidence",
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Text(Credits.format(p.price), fontWeight = FontWeight.Bold)
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(Credits.format(p.price), fontWeight = FontWeight.Bold)
+                            if (p.promoPrice != null) Text("HH ${p.promoPrice} · ${cz.klubpos.ui.components.fmtTime(p.promoFrom)}–${cz.klubpos.ui.components.fmtTime(p.promoTo)}",
+                                style = MaterialTheme.typography.labelSmall, color = cz.klubpos.ui.theme.KlubColors.Gold)
+                        }
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
                 }
@@ -148,6 +152,18 @@ private fun ProductDialog(p: Product, onDismiss: () -> Unit, onImage: () -> Unit
     var draught by remember { mutableStateOf(p.kegGroup != null) }
     var kegGroup by remember { mutableStateOf(p.kegGroup ?: p.name.substringBefore(" velk").substringBefore(" mal")) }
     var pourMl by remember { mutableStateOf(if (p.pourMl > 0) p.pourMl.toString() else "500") }
+    var promoOn by remember { mutableStateOf(p.promoPrice != null) }
+    var promoPrice by remember { mutableStateOf(p.promoPrice?.toString() ?: "") }
+    var promoDays by remember { mutableStateOf(p.promoDays) }
+    var promoFrom by remember { mutableStateOf(cz.klubpos.ui.components.fmtTime(p.promoFrom)) }
+    var promoTo by remember { mutableStateOf(cz.klubpos.ui.components.fmtTime(p.promoTo)) }
+    fun parseTime(t: String): Int? {
+        val parts = t.trim().replace('.', ':').split(":")
+        val h = parts.getOrNull(0)?.toIntOrNull() ?: return null
+        val m = parts.getOrNull(1)?.toIntOrNull() ?: 0
+        return if (h in 0..24 && m in 0..59) (h % 24) * 60 + m else null
+    }
+    val promoValid = !promoOn || (promoPrice.toLongOrNull() != null && parseTime(promoFrom) != null && parseTime(promoTo) != null && promoDays != 0)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -178,16 +194,40 @@ private fun ProductDialog(p: Product, onDismiss: () -> Unit, onImage: () -> Unit
                     OutlinedTextField(min, { min = it }, label = { Text("Minimální stav (pod ním → nákup)") }, singleLine = true, keyboardOptions = num)
                     OutlinedTextField(reorder, { reorder = it }, label = { Text("Obvykle nakupuji (0 = automaticky)") }, singleLine = true, keyboardOptions = num)
                 }
+                // ---- Happy hour ----
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(promoOn, { promoOn = it }); Spacer(Modifier.width(8.dp)); Text("Akční cena (happy hour)")
+                }
+                if (promoOn) {
+                    OutlinedTextField(promoPrice, { promoPrice = it.filter(Char::isDigit) }, label = { Text("Akční cena (kr)") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        listOf("Po", "Út", "St", "Čt", "Pá", "So", "Ne").forEachIndexed { i, d ->
+                            val on = promoDays and (1 shl i) != 0
+                            androidx.compose.material3.FilterChip(on, { promoDays = promoDays xor (1 shl i) }, label = { Text(d) })
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(promoFrom, { promoFrom = it }, label = { Text("Od") }, singleLine = true, modifier = Modifier.weight(1f),
+                            isError = parseTime(promoFrom) == null)
+                        OutlinedTextField(promoTo, { promoTo = it }, label = { Text("Do") }, singleLine = true, modifier = Modifier.weight(1f),
+                            isError = parseTime(promoTo) == null)
+                    }
+                    Text("Čas např. 17:00 – 20:00. Přes půlnoc (22:00 – 2:00) funguje taky.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) { Switch(active, { active = it }); Spacer(Modifier.width(8.dp)); Text("Aktivní (nabízet barmanovi)") }
                 if (p.id != 0L) OutlinedButton(onClick = onImage) { Text("Nahrát obrázek přes QR") }
             }
         },
         confirmButton = {
-            TextButton(enabled = name.isNotBlank() && price.toLongOrNull() != null && (!draught || kegGroup.isNotBlank()), onClick = {
+            TextButton(enabled = name.isNotBlank() && price.toLongOrNull() != null && (!draught || kegGroup.isNotBlank()) && promoValid, onClick = {
                 onSave(p.copy(name = name.trim(), category = category.trim().ifBlank { "Ostatní" }, price = price.toLong(),
                     trackStock = track && !draught, unit = unit.ifBlank { "ks" }, minStock = d(min), reorderQty = d(reorder), active = active,
                     kegGroup = if (draught) kegGroup.trim().ifBlank { null } else null,
-                    pourMl = if (draught) pourMl.toIntOrNull() ?: 500 else 0))
+                    pourMl = if (draught) pourMl.toIntOrNull() ?: 500 else 0,
+                    promoPrice = if (promoOn) promoPrice.toLongOrNull() else null,
+                    promoDays = promoDays, promoFrom = parseTime(promoFrom) ?: p.promoFrom, promoTo = parseTime(promoTo) ?: p.promoTo))
             }) { Text("Uložit") }
         },
         dismissButton = { TextButton(onDismiss) { Text("Zrušit") } },

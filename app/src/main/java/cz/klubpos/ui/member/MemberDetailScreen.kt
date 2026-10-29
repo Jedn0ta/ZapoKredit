@@ -183,7 +183,7 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
 
     fun addToCart(p: Product?, qty: Double = 1.0, price: Long? = null, desc: String? = null) {
         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-        val unit = price ?: p?.price ?: 0
+        val unit = price ?: p?.currentPrice() ?: 0
         val i = cart.indexOfFirst { it.product?.id == p?.id && p != null && it.unitPrice == unit }
         if (i >= 0) cart[i] = cart[i].copy(qty = cart[i].qty + qty)
         else cart += CartLine(p, desc ?: p?.name ?: "Vlastní položka", unit, qty)
@@ -191,7 +191,7 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
     /** Set the exact count of a product in the order (0 = remove it). Price always comes from Položky. */
     fun setQty(p: Product, q: Int) {
         cart.removeAll { it.product?.id == p.id }
-        if (q > 0) cart += CartLine(p, p.name, p.price, q.toDouble())
+        if (q > 0) cart += CartLine(p, p.name, p.currentPrice(), q.toDouble())
     }
     fun removeOne(l: CartLine) {
         val i = cart.indexOf(l); if (i < 0) return
@@ -226,7 +226,7 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
     fun repeat() = scope.launch {
         repo.lastChargeEntry(memberId)?.let { e ->
             val p = products.firstOrNull { it.id == e.productId }
-            addToCart(p, e.quantity, p?.price ?: e.unitPrice, e.description)
+            addToCart(p, e.quantity, p?.currentPrice() ?: e.unitPrice, e.description)
         }
     }
 
@@ -378,6 +378,7 @@ private fun ProductGrid(
         }
     }
     val categories = remember(products) { products.map { it.category }.distinct().sortedBy { it.lowercase() } }
+    val now = cz.klubpos.ui.components.rememberMinuteClock()
     // Default view = everything; "★ Oblíbené" shows what this member usually has.
     var cat by remember { mutableStateOf<String?>(null) }
     Column(modifier) {
@@ -417,7 +418,7 @@ private fun ProductGrid(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             itemsIndexed(local, key = { _, p -> p.id }) { i, p ->
-                ProductKey(p, counts[p.id] ?: 0.0,
+                ProductKey(p, counts[p.id] ?: 0.0, promo = p.promoActive(now),
                     (if (i == 0) Modifier.tourTarget("product_key") else Modifier).reorderItem(reorder, p.id),
                     onTap = { onTap(p) }, onMinus = { onMinus(p) })
             }
@@ -448,7 +449,7 @@ private fun CategoryPill(label: String, color: Color?, selected: Boolean, onClic
 /** Big POS key: category colour, name, price. Count badge = how many today. Bounces on tap. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ProductKey(p: Product, count: Double, modifier: Modifier = Modifier, onTap: () -> Unit, onMinus: () -> Unit) {
+private fun ProductKey(p: Product, count: Double, promo: Boolean = false, modifier: Modifier = Modifier, onTap: () -> Unit, onMinus: () -> Unit) {
     val haptic = LocalHapticFeedback.current
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -469,10 +470,17 @@ private fun ProductKey(p: Product, count: Double, modifier: Modifier = Modifier,
             Text(p.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, lineHeight = 18.sp, maxLines = 3,
                 overflow = TextOverflow.Ellipsis, color = Color.White, modifier = Modifier.padding(top = 4.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
-                Text("${p.price}", style = Display.copy(fontSize = 22.sp), color = accent)
+                if (promo) Row(verticalAlignment = Alignment.Bottom) {
+                    Text("${p.promoPrice}", style = Display.copy(fontSize = 22.sp), color = KlubColors.Gold)
+                    Text(" ${p.price}", style = MaterialTheme.typography.bodySmall, color = KlubColors.Muted,
+                        textDecoration = TextDecoration.LineThrough)
+                } else Text("${p.price}", style = Display.copy(fontSize = 22.sp), color = accent)
                 if (low) Box(Modifier.size(8.dp).clip(CircleShape).background(KlubColors.OldDebt))
             }
         }
+        if (promo && count == 0.0) Text("HH", Modifier.align(Alignment.TopEnd).padding(6.dp).clip(RoundedCornerShape(6.dp))
+            .background(KlubColors.GoldBrush).padding(horizontal = 5.dp, vertical = 1.dp),
+            color = KlubColors.Ink, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
         if (count > 0) Box(Modifier.align(Alignment.TopStart).padding(4.dp).size(36.dp).clip(CircleShape)
             .background(Color.Black.copy(alpha = 0.55f)).clickable(onClick = onMinus), contentAlignment = Alignment.Center) {
             Icon(Icons.Default.Remove, "Ubrat", tint = Color.White, modifier = Modifier.size(20.dp))

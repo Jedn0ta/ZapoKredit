@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LocalBar
 import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.Icon
@@ -77,7 +78,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
 
 private enum class Dest(val route: String, val label: String, val icon: ImageVector) {
-    MEMBERS("members", "Členové", Icons.Default.People),
+    MEMBERS("members", "Home", Icons.Default.Home),
     INVENTORY("inventory", "Sklad", Icons.Default.Inventory2),
     SHOPPING("shopping", "Nákup", Icons.Default.ShoppingCart),
     PRODUCTS("products", "Položky", Icons.Default.LocalBar),

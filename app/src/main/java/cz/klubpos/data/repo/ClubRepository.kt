@@ -123,7 +123,7 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
     suspend fun chargeProduct(memberId: Long, productId: Long, qty: Double = 1.0, priceOverride: Long? = null) =
         db.withTransaction {
             val p = db.products().get(productId) ?: error("Produkt nenalezen")
-            val unit = priceOverride ?: p.price
+            val unit = priceOverride ?: p.currentPrice()
             val visitId = openVisit(memberId)
             val entryId = insertEntry(
                 LedgerEntry(

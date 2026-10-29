@@ -140,6 +140,8 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
             SearchField(query, { query = it }, Modifier.weight(1f).tourTarget("search"))
             Segmented(Filter.entries.map { it.label }, filter.ordinal) { filter = Filter.entries[it] }
         }
+        // Happy hour (only while a promo runs)
+        cz.klubpos.ui.components.HappyHourStrip(Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
         // Beer kegs on tap – level at a glance
         cz.klubpos.ui.inventory.KegStrip(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp))
         Box(Modifier.weight(1f)) {
