@@ -118,8 +118,8 @@ fun NumberDialog(
     label: String = "",
     decimal: Boolean = false,
     extra: (@Composable () -> Unit)? = null,
-    onConfirm: (Double) -> Unit,
     onDismiss: () -> Unit,
+    onConfirm: (Double) -> Unit,
 ) {
     var text by remember { mutableStateOf(initial) }
     val value = text.replace(',', '.').toDoubleOrNull()
