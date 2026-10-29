@@ -28,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -159,7 +160,7 @@ fun KegGauge(fraction: Float, modifier: Modifier) {
         }
         drawPath(body, KlubColors.SurfaceHigh)
         // beer level (clipped to barrel shape)
-        androidx.compose.ui.graphics.drawscope.clipPath(body) {
+        clipPath(body) {
             val top = h * (1f - f)
             drawRect(Brush.verticalGradient(listOf(beer, beer.copy(alpha = 0.75f)), startY = top, endY = h),
                 topLeft = androidx.compose.ui.geometry.Offset(0f, top), size = androidx.compose.ui.geometry.Size(w, h - top))
