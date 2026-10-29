@@ -15,6 +15,7 @@ import cz.klubpos.data.db.entity.LedgerEntry
 import cz.klubpos.data.db.entity.Bartender
 import cz.klubpos.data.db.entity.Keg
 import cz.klubpos.data.db.entity.Supplier
+import cz.klubpos.data.db.entity.KegStock
 import cz.klubpos.data.db.dao.KegDao
 import cz.klubpos.data.db.dao.SupplierDao
 import cz.klubpos.data.db.dao.BartenderDao
@@ -29,8 +30,8 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Database(
     entities = [Member::class, Product::class, Visit::class, LedgerEntry::class,
-        StockMovement::class, ShoppingItem::class, Bartender::class, Keg::class, Supplier::class],
-    version = 4,
+        StockMovement::class, ShoppingItem::class, Bartender::class, Keg::class, Supplier::class, KegStock::class],
+    version = 5,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -78,13 +79,22 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `keg_stock` (`kegGroup` TEXT NOT NULL, `count` INTEGER NOT NULL, " +
+                        "`minCount` INTEGER NOT NULL, `sizeLiters` REAL NOT NULL, PRIMARY KEY(`kegGroup`))"
+                )
+            }
+        }
+
         /** Whole DB file is encrypted with SQLCipher (AES-256); key comes from the Android Keystore. */
         fun create(context: Context): AppDatabase {
             System.loadLibrary("sqlcipher")
             val factory = SupportOpenHelperFactory(DatabaseKeyManager.getOrCreatePassphrase(context))
             return Room.databaseBuilder(context, AppDatabase::class.java, "klubpos.db")
                 .openHelperFactory(factory)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 // Before first production release replace with real migrations.
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()

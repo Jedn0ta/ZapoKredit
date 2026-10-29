@@ -51,6 +51,8 @@ fun KegsSection() {
     val scope = rememberCoroutineScope()
     val active by repo.activeKegs().collectAsState(initial = emptyList())
     val groups by repo.kegGroups().collectAsState(initial = emptyList())
+    val stock by repo.kegStock().collectAsState(initial = emptyList())
+    var editStock by remember { mutableStateOf<String?>(null) }
     var tapFor by remember { mutableStateOf<String?>(null) }
     var orderFor by remember { mutableStateOf<String?>(null) }
     val all = (groups + active.map { it.kegGroup }).distinct()
@@ -59,12 +61,25 @@ fun KegsSection() {
     Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).tourTarget("kegs"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         all.forEach { g ->
             val k = active.firstOrNull { it.kegGroup == g }
-            KegCard(g, k, onTap = { tapFor = g }, onOrder = { orderFor = g })
+            val st = stock.firstOrNull { it.kegGroup == g }
+            KegCard(g, k, st,
+                onTap = { tapFor = g }, onOrder = { orderFor = g },
+                onStockDelta = { d -> scope.launch { repo.setKegStock(g, count = (st?.count ?: 0) + d) } },
+                onEditStock = { editStock = g })
         }
     }
 
     tapFor?.let { g ->
-        TapKegDialog(g, onDismiss = { tapFor = null }) { size -> scope.launch { repo.tapKeg(g, size) }; tapFor = null }
+        val st = stock.firstOrNull { it.kegGroup == g }
+        TapKegDialog(g, st?.count ?: 0, st?.sizeLiters ?: 50.0, onDismiss = { tapFor = null }) { size, fromStock ->
+            scope.launch { repo.tapKeg(g, size, fromStock) }; tapFor = null
+        }
+    }
+    editStock?.let { g ->
+        val st = stock.firstOrNull { it.kegGroup == g }
+        KegStockDialog(g, st?.count ?: 0, st?.minCount ?: 1, onDismiss = { editStock = null }) { c, m ->
+            scope.launch { repo.setKegStock(g, count = c, minCount = m) }; editStock = null
+        }
     }
     orderFor?.let { g ->
         OrderContactsSheet("Objednat: $g", "Dobrý den, objednávám sud $g. Děkuji.", onDismiss = { orderFor = null })
@@ -72,7 +87,10 @@ fun KegsSection() {
 }
 
 @Composable
-private fun KegCard(group: String, k: KegStatus?, onTap: () -> Unit, onOrder: () -> Unit) {
+private fun KegCard(
+    group: String, k: KegStatus?, stock: cz.klubpos.data.db.entity.KegStock?,
+    onTap: () -> Unit, onOrder: () -> Unit, onStockDelta: (Int) -> Unit, onEditStock: () -> Unit,
+) {
     val df = remember { SimpleDateFormat("EEEE d. M. 'v' HH:mm", Locale("cs", "CZ")) }
     Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(24.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -101,6 +119,18 @@ private fun KegCard(group: String, k: KegStatus?, onTap: () -> Unit, onOrder: ()
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (frac < 0.1f) Text("Sud dochází!", color = KlubColors.OldDebt, fontWeight = FontWeight.Bold)
         }
+        // Cellar stock of full kegs
+        val count = stock?.count ?: 0
+        val low = count <= (stock?.minCount ?: 1)
+        Row(Modifier.fillMaxWidth().glass(RoundedCornerShape(16.dp), alpha = 0.04f).padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Text("Ve sklepě", Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton({ onStockDelta(-1) }, enabled = count > 0) { Text("−", style = MaterialTheme.typography.titleLarge) }
+            Text("$count ${if (count == 1) "sud" else if (count in 2..4) "sudy" else "sudů"}",
+                Modifier.clickable(onClick = onEditStock).padding(horizontal = 6.dp),
+                style = MaterialTheme.typography.titleMedium, color = if (low) KlubColors.OpenTab else MaterialTheme.colorScheme.onSurface)
+            TextButton({ onStockDelta(+1) }) { Text("+", style = MaterialTheme.typography.titleLarge) }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(onTap) { Text(if (k == null) "Narazit sud" else "Narazit nový", color = KlubColors.Gold) }
             TextButton(onOrder) { Text("Objednat") }
@@ -109,8 +139,9 @@ private fun KegCard(group: String, k: KegStatus?, onTap: () -> Unit, onOrder: ()
 }
 
 @Composable
-private fun TapKegDialog(group: String, onDismiss: () -> Unit, onTap: (Double) -> Unit) {
+private fun TapKegDialog(group: String, inCellar: Int, usualSize: Double, onDismiss: () -> Unit, onTap: (Double, Boolean) -> Unit) {
     var custom by remember { mutableStateOf("") }
+    var fromStock by remember { mutableStateOf(inCellar > 0) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Narazit sud – $group") },
@@ -118,23 +149,60 @@ private fun TapKegDialog(group: String, onDismiss: () -> Unit, onTap: (Double) -
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Velikost sudu:", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    listOf(15.0, 30.0, 50.0).forEach { s ->
-                        Box(Modifier.width(80.dp).height(56.dp).glass(RoundedCornerShape(16.dp)).clickable { onTap(s) },
-                            contentAlignment = Alignment.Center) { Text("${fmtL(s)} l", style = MaterialTheme.typography.titleMedium) }
+                    (listOf(15.0, 30.0, 50.0) + usualSize).distinct().sorted().forEach { s ->
+                        val usual = s == usualSize
+                        Box(Modifier.width(76.dp).height(56.dp).glass(RoundedCornerShape(16.dp), alpha = if (usual) 0.14f else 0.05f)
+                            .clickable { onTap(s, fromStock) }, contentAlignment = Alignment.Center) {
+                            Text("${fmtL(s)} l", style = MaterialTheme.typography.titleMedium, color = if (usual) KlubColors.Gold else KlubColors.Cream)
+                        }
                     }
                 }
                 OutlinedTextField(custom, { custom = it.filter { c -> c.isDigit() || c == ',' || c == '.' } },
                     label = { Text("Jiná velikost (l)") }, singleLine = true)
-                Text("Předchozí sud se označí jako dopitý. Čas naražení se uloží.", style = MaterialTheme.typography.bodySmall,
+                Row(Modifier.clickable { fromStock = !fromStock }, verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.Checkbox(fromStock, { fromStock = it })
+                    Text("Vzít ze sklepa (zbývá $inCellar)")
+                }
+                Text("Předchozí sud se označí jako dopitý, čas naražení se uloží.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
         confirmButton = {
             val v = custom.replace(',', '.').toDoubleOrNull()
-            TextButton(enabled = v != null && v > 0, onClick = { onTap(v!!) }) { Text("Narazit") }
+            TextButton(enabled = v != null && v > 0, onClick = { onTap(v!!, fromStock) }) { Text("Narazit") }
         },
         dismissButton = { TextButton(onDismiss) { Text("Zrušit") } },
     )
+}
+
+@Composable
+private fun KegStockDialog(group: String, count: Int, minCount: Int, onDismiss: () -> Unit, onSave: (Int, Int) -> Unit) {
+    var c by remember { mutableStateOf(count) }
+    var m by remember { mutableStateOf(minCount) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Sudy ve sklepě – $group") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Stepper("Plných sudů", c) { c = it.coerceAtLeast(0) }
+                Stepper("Objednat při", m) { m = it.coerceAtLeast(0) }
+                Text("Když počet klesne na „Objednat při“, sud se sám přidá do nákupního seznamu.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = { TextButton({ onSave(c, m) }) { Text("Uložit") } },
+        dismissButton = { TextButton(onDismiss) { Text("Zrušit") } },
+    )
+}
+
+@Composable
+private fun Stepper(label: String, value: Int, onChange: (Int) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f))
+        Box(Modifier.width(48.dp).height(48.dp).glass(RoundedCornerShape(14.dp)).clickable { onChange(value - 1) }, contentAlignment = Alignment.Center) { Text("−", style = MaterialTheme.typography.titleLarge) }
+        Text("$value", Modifier.width(56.dp), style = Display.copy(fontSize = 26.sp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Box(Modifier.width(48.dp).height(48.dp).glass(RoundedCornerShape(14.dp)).clickable { onChange(value + 1) }, contentAlignment = Alignment.Center) { Text("+", style = MaterialTheme.typography.titleLarge) }
+    }
 }
 
 private fun fmtL(v: Double) = if (v % 1.0 == 0.0) v.toLong().toString() else "%.1f".format(Locale("cs", "CZ"), v)

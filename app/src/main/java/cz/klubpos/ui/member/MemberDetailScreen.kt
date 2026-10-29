@@ -33,6 +33,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed as itemsIndexedList
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -84,6 +85,8 @@ import androidx.compose.ui.unit.sp
 import cz.klubpos.data.db.entity.EntryType
 import cz.klubpos.data.db.entity.LedgerEntry
 import cz.klubpos.data.db.entity.Product
+import cz.klubpos.data.repo.ClubRepository
+import androidx.compose.runtime.mutableStateListOf
 import cz.klubpos.domain.BusinessDay
 import cz.klubpos.domain.Credits
 import cz.klubpos.domain.MemberStatus
@@ -154,13 +157,18 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
     val products by repo.activeProducts().collectAsState(initial = emptyList())
     val ledger by repo.ledger(memberId).collectAsState(initial = emptyList())
     val (lines, payments) = remember(ledger) { buildReceipt(ledger, dayStart) }
-    val countByProduct = remember(lines) { lines.filter { it.productId != null }.groupBy { it.productId!! }.mapValues { e -> e.value.sumOf { it.qty } } }
+
+    // The order being put together – written to the tab only with "Na futro" (or before paying).
+    val cart = remember { mutableStateListOf<CartLine>() }
+    val cartTotal = cart.sumOf { Math.round(it.unitPrice * it.qty) }
+    val cartCount = remember(cart.toList()) { cart.filter { it.product != null }.groupBy { it.product!!.id }.mapValues { e -> e.value.sumOf { it.qty } } }
 
     var showPay by remember { mutableStateOf(false) }
     var showCustom by remember { mutableStateOf(false) }
     var showHistory by remember { mutableStateOf(false) }
     var showReceiptSheet by remember { mutableStateOf(false) }
     var showEdit by remember { mutableStateOf(false) }
+    var confirmLeave by remember { mutableStateOf(false) }
     var qtyFor by remember { mutableStateOf<Product?>(null) }
     var transferLine by remember { mutableStateOf<ReceiptLine?>(null) }
     val settings by rememberSettings().flow.collectAsState()
@@ -170,15 +178,30 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
     var lastLabel by remember { mutableStateOf<String?>(null) }
     androidx.compose.runtime.LaunchedEffect(ledger) { lastLabel = repo.lastChargeLabel(memberId) }
 
-    fun add(p: Product, qty: Double = 1.0, price: Long? = null) = scope.launch {
+    fun addToCart(p: Product?, qty: Double = 1.0, price: Long? = null, desc: String? = null) {
         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-        repo.chargeProduct(memberId, p.id, qty, price)
+        val unit = price ?: p?.price ?: 0
+        val i = cart.indexOfFirst { it.product?.id == p?.id && p != null && it.unitPrice == unit }
+        if (i >= 0) cart[i] = cart[i].copy(qty = cart[i].qty + qty)
+        else cart += CartLine(p, desc ?: p?.name ?: "Vlastní položka", unit, qty)
     }
+    fun removeOne(l: CartLine) {
+        val i = cart.indexOf(l); if (i < 0) return
+        if (l.qty > 1) cart[i] = l.copy(qty = l.qty - 1) else cart.removeAt(i)
+    }
+    suspend fun commitCart() {
+        if (cart.isEmpty()) return
+        val items = cart.map { ClubRepository.CartItem(it.product?.id, it.desc, it.unitPrice, it.qty) }
+        cart.clear()
+        repo.chargeCart(memberId, items)
+    }
+    /** "Na futro": write the order to the tab and go back to the members. */
+    fun futro() = scope.launch { haptic.performHapticFeedback(HapticFeedbackType.LongPress); commitCart(); onBack() }
+    fun pay() = scope.launch { commitCart(); showPay = true }
     fun voidWithUndo(entryId: Long, label: String) = scope.launch {
         repo.void(entryId)
         snackbar.currentSnackbarData?.dismiss()
         if (snackbar.showSnackbar("Storno: $label", actionLabel = "Vrátit") == SnackbarResult.ActionPerformed) {
-            // Undo = charge the same thing again
             ledger.firstOrNull { it.id == entryId }?.let { e ->
                 if (e.productId != null) repo.chargeProduct(memberId, e.productId, e.quantity, e.unitPrice)
                 else repo.chargeCustom(memberId, e.description, e.amount)
@@ -186,29 +209,32 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
         }
     }
     fun repeat() = scope.launch {
-        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-        repo.repeatLast(memberId)?.let { snackbar.currentSnackbarData?.dismiss(); snackbar.showSnackbar("↻ $it") }
-    }
-    fun payAll() = scope.launch {
-        val bal = st?.balance ?: 0
-        if (bal > 0) {
-            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-            repo.pay(memberId, bal, closeVisitAfter = false, method = "CASH")
-            snackbar.showSnackbar("Zaplaceno ${Credits.format(bal)}")
+        repo.lastChargeEntry(memberId)?.let { e ->
+            addToCart(products.firstOrNull { it.id == e.productId }, e.quantity, e.unitPrice, e.description)
         }
     }
 
+    // Leaving with an unsaved order → ask.
+    androidx.activity.compose.BackHandler(enabled = cart.isNotEmpty()) { confirmLeave = true }
+    val back: () -> Unit = { if (cart.isNotEmpty()) confirmLeave = true else onBack() }
+
     val receipt: @Composable (Modifier) -> Unit = { mod ->
-        Receipt(st, lines, payments, mod,
-            onPlus = { l -> products.firstOrNull { it.id == l.productId }?.let { add(it, 1.0, l.unitPrice) } },
+        Receipt(st, cart, lines, payments, mod,
+            onCartPlus = { l -> addToCart(l.product, 1.0, l.unitPrice, l.desc) },
+            onCartMinus = { l -> removeOne(l) },
+            onPlus = { l -> products.firstOrNull { it.id == l.productId }?.let { addToCart(it, 1.0, l.unitPrice) } },
             onMinus = { l -> voidWithUndo(l.entryIds.first(), l.name) },
             onLong = { l -> transferLine = l })
+    }
+    val bar: @Composable (Boolean) -> Unit = { expanded ->
+        OrderBar(st, cartTotal, cart.sumOf { it.qty }, expanded,
+            onFutro = { futro() }, onPay = { pay() }, onDone = onBack, onOpen = { showReceiptSheet = true })
     }
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            TopRow(member?.nickname ?: member?.name ?: "", member?.photoId, st?.inClub == true,
-                onBack = onBack, onName = { showEdit = true }, onHistory = { showHistory = true })
+            TopRow(member?.nickname ?: member?.name ?: "", member?.photoId, st,
+                onBack = back, onName = { showEdit = true }, onHistory = { showHistory = true })
             val limit = settings.debtLimit
             if (limit > 0 && st != null && st.balance >= limit) {
                 Text("Překročen limit dluhu ${Credits.format(limit)}",
@@ -217,41 +243,51 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
             }
             BoxWithConstraints(Modifier.weight(1f)) {
                 if (maxWidth >= 720.dp) {
-                    // Tablet: products | receipt
                     Row(Modifier.fillMaxSize()) {
-                        ProductGrid(products, favorites, lastLabel, countByProduct, Modifier.weight(1f).fillMaxHeight(),
-                            onTap = { add(it) }, onLong = { qtyFor = it }, onCustom = { showCustom = true }, onRepeat = { repeat() })
-                        Column(Modifier.width(360.dp).fillMaxHeight().padding(12.dp).glass(RoundedCornerShape(28.dp))) {
+                        ProductGrid(products, favorites, lastLabel, cartCount, Modifier.weight(1f).fillMaxHeight(),
+                            onTap = { addToCart(it) }, onLong = { qtyFor = it }, onCustom = { showCustom = true }, onRepeat = { repeat() })
+                        Column(Modifier.width(380.dp).fillMaxHeight().padding(12.dp).glass(RoundedCornerShape(28.dp))) {
                             receipt(Modifier.weight(1f).tourTarget("receipt"))
-                            PayBar(st, expanded = true, onPay = { showPay = true }, onPayAll = { payAll() }, onOpen = {})
+                            bar(true)
                         }
                     }
                 } else {
                     Column(Modifier.fillMaxSize()) {
-                        ProductGrid(products, favorites, lastLabel, countByProduct, Modifier.weight(1f),
-                            onTap = { add(it) }, onLong = { qtyFor = it }, onCustom = { showCustom = true }, onRepeat = { repeat() })
-                        PayBar(st, expanded = false, onPay = { showPay = true }, onPayAll = { payAll() },
-                            onOpen = { showReceiptSheet = true })
+                        ProductGrid(products, favorites, lastLabel, cartCount, Modifier.weight(1f),
+                            onTap = { addToCart(it) }, onLong = { qtyFor = it }, onCustom = { showCustom = true }, onRepeat = { repeat() })
+                        bar(false)
                     }
                 }
             }
         }
-        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = 90.dp))
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = 110.dp))
     }
 
     if (showReceiptSheet) ModalBottomSheet(onDismissRequest = { showReceiptSheet = false },
         containerColor = MaterialTheme.colorScheme.surface) {
-        receipt(Modifier.fillMaxWidth().height(420.dp))
+        receipt(Modifier.fillMaxWidth().height(460.dp))
     }
     if (showPay && st != null) PaySheet(st, member?.nickname ?: member?.name ?: "", settings.account, settings.clubName,
         onDismiss = { showPay = false }) { amount, leave, method ->
-        scope.launch { repo.pay(memberId, amount, leave, method); snackbar.showSnackbar("Zaplaceno ${Credits.format(amount)}") }
-        showPay = false; if (leave) onBack()
+        scope.launch { repo.pay(memberId, amount, leave, method) }
+        showPay = false; onBack()
     }
+    if (confirmLeave) AlertDialog(
+        onDismissRequest = { confirmLeave = false },
+        title = { Text("Neuložená objednávka") },
+        text = { Text("${fmtQty(cart.sumOf { it.qty })} položek za ${Credits.format(cartTotal)}. Připsat na účet?") },
+        confirmButton = { TextButton({ confirmLeave = false; futro() }) { Text("Na futro") } },
+        dismissButton = {
+            Row {
+                TextButton({ confirmLeave = false; cart.clear(); onBack() }) { Text("Zahodit", color = KlubColors.OldDebt) }
+                TextButton({ confirmLeave = false }) { Text("Zpět") }
+            }
+        },
+    )
     if (showCustom) CustomItemDialog(onDismiss = { showCustom = false }) { desc, price ->
-        scope.launch { repo.chargeCustom(memberId, desc, price) }; showCustom = false
+        addToCart(null, 1.0, price, desc.ifBlank { "Vlastní položka" }); showCustom = false
     }
-    qtyFor?.let { p -> QtyPriceDialog(p, onDismiss = { qtyFor = null }) { q, pr -> add(p, q, pr); qtyFor = null } }
+    qtyFor?.let { p -> QtyPriceDialog(p, onDismiss = { qtyFor = null }) { q, pr -> addToCart(p, q, pr); qtyFor = null } }
     transferLine?.let { l ->
         TransferSheet(statuses.filter { it.memberId != memberId }, l.name, onDismiss = { transferLine = null }) { to ->
             scope.launch { repo.transfer(l.entryIds.first(), to.memberId); snackbar.showSnackbar("${l.name} → ${to.nickname ?: to.name}") }
@@ -268,20 +304,29 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
     }
 }
 
+/** A line of the order being prepared (not written yet). */
+private data class CartLine(val product: Product?, val desc: String, val unitPrice: Long, val qty: Double)
+
 @Composable
-private fun TopRow(name: String, photoId: String?, inClub: Boolean, onBack: () -> Unit, onName: () -> Unit, onHistory: () -> Unit) {
-    Row(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+private fun TopRow(name: String, photoId: String?, st: MemberStatus?, onBack: () -> Unit, onName: () -> Unit, onHistory: () -> Unit) {
+    Row(Modifier.fillMaxWidth().height(68.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Zpět") }
         Row(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable(onClick = onName).padding(6.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Box {
-                EncryptedImage(photoId, name, Modifier.size(40.dp).clip(CircleShape), textSize = 16)
-                if (inClub) Box(Modifier.align(Alignment.BottomEnd).size(12.dp).clip(CircleShape).background(KlubColors.InClub))
+                EncryptedImage(photoId, name, Modifier.size(44.dp).clip(CircleShape), textSize = 16)
+                if (st?.inClub == true) Box(Modifier.align(Alignment.BottomEnd).size(12.dp).clip(CircleShape).background(KlubColors.InClub))
             }
             Spacer(Modifier.width(12.dp))
-            Text(name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(name, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        IconButton(onClick = onHistory, modifier = Modifier.tourTarget("history")) { Icon(Icons.Default.History, "Historie") }
+        // Today / total debt – tap for the full history (what and when)
+        Column(Modifier.clip(RoundedCornerShape(14.dp)).clickable(onClick = onHistory).tourTarget("history")
+            .padding(horizontal = 12.dp, vertical = 4.dp), horizontalAlignment = Alignment.End) {
+            Text("dnes ${st?.todaySpend ?: 0} · dluh", style = MaterialTheme.typography.labelSmall, color = KlubColors.Muted)
+            Text(Credits.format((st?.balance ?: 0).coerceAtLeast(0)), style = Display.copy(fontSize = 20.sp),
+                color = when { (st?.balance ?: 0) <= 0 -> KlubColors.PaidToday; (st?.olderDebt ?: 0) > 0 -> KlubColors.OldDebt; else -> KlubColors.OpenTab })
+        }
     }
 }
 
@@ -386,16 +431,37 @@ private fun ProductKey(p: Product, count: Double, modifier: Modifier = Modifier,
 
 @Composable
 private fun Receipt(
-    st: MemberStatus?, lines: List<ReceiptLine>, payments: List<LedgerEntry>, modifier: Modifier,
+    st: MemberStatus?, cart: List<CartLine>, lines: List<ReceiptLine>, payments: List<LedgerEntry>, modifier: Modifier,
+    onCartPlus: (CartLine) -> Unit, onCartMinus: (CartLine) -> Unit,
     onPlus: (ReceiptLine) -> Unit, onMinus: (ReceiptLine) -> Unit, onLong: (ReceiptLine) -> Unit,
 ) {
+    @Composable
+    fun header(t: String, color: Color = MaterialTheme.colorScheme.onSurfaceVariant) =
+        Text(t, style = MaterialTheme.typography.labelLarge, color = color, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+
     LazyColumn(modifier, contentPadding = PaddingValues(vertical = 8.dp)) {
-        item {
-            Text("Dnes", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+        item { header("Nová objednávka", KlubColors.Gold) }
+        if (cart.isEmpty()) item {
+            Text("Klepni na položky vlevo", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp))
         }
-        if (lines.isEmpty()) item {
-            Text("Klepni na položku", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(20.dp))
+        itemsIndexedList(cart, key = { i, _ -> "cart$i" }) { _, l ->
+            SwipeRow(
+                start = SwipeAction(Icons.Default.Add, "+1", KlubColors.PaidToday) { onCartPlus(l) },
+                end = SwipeAction(Icons.Default.Remove, "−1", KlubColors.OldDebt) { onCartMinus(l) },
+            ) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton({ onCartMinus(l) }) { Icon(Icons.Default.Remove, "Ubrat", tint = KlubColors.Muted) }
+                    Text(fmtQty(l.qty), style = Display.copy(fontSize = 18.sp), color = KlubColors.Gold, modifier = Modifier.width(32.dp),
+                        textAlign = TextAlign.Center)
+                    IconButton({ onCartPlus(l) }) { Icon(Icons.Default.Add, "Přidat", tint = KlubColors.Muted) }
+                    Text(l.desc, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("${Math.round(l.unitPrice * l.qty)}", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(end = 8.dp))
+                }
+            }
+        }
+        if (lines.isNotEmpty() || payments.isNotEmpty()) item {
+            HorizontalDivider(Modifier.padding(horizontal = 20.dp, vertical = 6.dp), color = MaterialTheme.colorScheme.outlineVariant)
+            header("Dnes už má na účtu")
         }
         items(lines, key = { it.key }) { l ->
             SwipeRow(
@@ -404,63 +470,80 @@ private fun Receipt(
             ) {
                 Row(Modifier.fillMaxWidth()
                     .combinedClickable(onClick = {}, onLongClick = { onLong(l) })
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                    .padding(horizontal = 20.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    Text(fmtQty(l.qty), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.width(36.dp))
+                    Text(fmtQty(l.qty), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(36.dp))
                     Text(l.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("${l.amount}", fontWeight = FontWeight.SemiBold)
+                    Text("${l.amount}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
         items(payments, key = { "p${it.id}" }) { p ->
-            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp)) {
-                Text("Zaplaceno", Modifier.weight(1f), color = KlubColors.PaidToday)
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
+                Text(p.description, Modifier.weight(1f), color = KlubColors.PaidToday)
                 Text("−${-p.amount}", color = KlubColors.PaidToday, fontWeight = FontWeight.SemiBold)
             }
         }
         if (st != null && st.olderDebt > 0) item {
-            HorizontalDivider(Modifier.padding(horizontal = 20.dp, vertical = 4.dp), color = MaterialTheme.colorScheme.surfaceVariant)
-            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp)) {
-                Text("Z minula", Modifier.weight(1f), color = KlubColors.OldDebt)
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
+                Text("Dluh z minula", Modifier.weight(1f), color = KlubColors.OldDebt)
                 Text("${st.olderDebt}", color = KlubColors.OldDebt, fontWeight = FontWeight.SemiBold)
             }
         }
     }
 }
 
-/** Bottom bar: total + big pay button. Tap = choose amount, hold = pay everything. */
-@OptIn(ExperimentalFoundationApi::class)
+/**
+ * Bottom bar. Order in progress → "Na futro" (write to tab, back to members) + "Zaplatit".
+ * Nothing new → "Hotovo" + "Zaplatit" (if there is something to pay).
+ */
 @Composable
-private fun PayBar(st: MemberStatus?, expanded: Boolean, onPay: () -> Unit, onPayAll: () -> Unit, onOpen: () -> Unit) {
-    val total = st?.balance ?: 0
-    Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(12.dp).then(if (expanded) Modifier else Modifier.glass(RoundedCornerShape(26.dp))).padding(8.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Column(Modifier.weight(1f).then(if (expanded) Modifier else Modifier.tourTarget("receipt"))
-            .clip(RoundedCornerShape(12.dp)).clickable(enabled = !expanded, onClick = onOpen).padding(8.dp)) {
-            Text(if (expanded) "Celkem" else "Účet ▴", style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(if (total < 0) "+${Credits.format(-total)}" else Credits.format(total),
-                style = Display.copy(fontSize = 30.sp),
-                color = when { total <= 0 -> KlubColors.PaidToday; (st?.todayUnpaid ?: 0) > 0 -> MaterialTheme.colorScheme.onSurface; else -> KlubColors.OldDebt })
+private fun OrderBar(
+    st: MemberStatus?, cartTotal: Long, cartQty: Double, expanded: Boolean,
+    onFutro: () -> Unit, onPay: () -> Unit, onDone: () -> Unit, onOpen: () -> Unit,
+) {
+    val hasCart = cartQty > 0
+    val canPay = hasCart || (st?.balance ?: 0) > 0
+    Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(12.dp)
+        .then(if (expanded) Modifier else Modifier.glass(RoundedCornerShape(26.dp))).padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(enabled = !expanded, onClick = onOpen).padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(if (hasCart) "Objednávka · ${fmtQty(cartQty)} ks" else if (expanded) "Nic nového" else "Účet ▴",
+                    style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(if (hasCart) "+ ${Credits.format(cartTotal)}" else "dluh ${Credits.format((st?.balance ?: 0).coerceAtLeast(0))}",
+                    style = Display.copy(fontSize = 26.sp), color = if (hasCart) KlubColors.Gold else MaterialTheme.colorScheme.onSurface)
+            }
         }
-        val enabled = total > 0
-        Box(Modifier.tourTarget("pay_button").height(60.dp).width(160.dp).clip(RoundedCornerShape(14.dp))
-            .background(if (enabled) Brush.linearGradient(listOf(KlubColors.PaidToday, Color(0xFF1FB57A))) else SolidColor(MaterialTheme.colorScheme.surfaceVariant))
-            .combinedClickable(enabled = enabled, onClick = onPay, onLongClick = onPayAll),
-            contentAlignment = Alignment.Center) {
-            Text("Zaplatit", color = if (enabled) KlubColors.Ink else MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 19.sp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            // Pay (secondary)
+            Box(Modifier.weight(1f).height(60.dp).tourTarget("pay_button")
+                .then(if (canPay) Modifier.glass(RoundedCornerShape(16.dp), alpha = 0.08f) else Modifier.glass(RoundedCornerShape(16.dp), alpha = 0.02f))
+                .clickable(enabled = canPay, onClick = onPay), contentAlignment = Alignment.Center) {
+                Text("Zaplatit", color = if (canPay) KlubColors.PaidToday else MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+            }
+            // Na futro (primary) / Hotovo
+            Box(Modifier.weight(1.4f).height(60.dp).tourTarget("futro_button").clip(RoundedCornerShape(16.dp))
+                .background(if (hasCart) KlubColors.GoldBrush else SolidColor(MaterialTheme.colorScheme.surfaceVariant))
+                .clickable(onClick = if (hasCart) onFutro else onDone), contentAlignment = Alignment.Center) {
+                Text(if (hasCart) "Na futro" else "Hotovo", color = if (hasCart) KlubColors.Ink else MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 19.sp))
+            }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PaySheet(
     st: MemberStatus, memberName: String, account: String, clubName: String,
     onDismiss: () -> Unit, onPay: (Long, Boolean, String) -> Unit,
 ) {
-    var amount by remember { mutableStateOf(st.balance.toString()) }
+    // null = not typed yet → default follows live status (today's spend, or the whole debt).
+    var amountText by remember { mutableStateOf<String?>(null) }
+    val defaultAmount = if (st.todayUnpaid > 0) st.todayUnpaid else st.balance.coerceAtLeast(0)
+    val amount = amountText ?: defaultAmount.toString()
     var leave by remember { mutableStateOf(st.inClub) }
     var method by remember { mutableStateOf("CASH") }
     var received by remember { mutableStateOf<Long?>(null) }   // cash handed over
@@ -472,9 +555,12 @@ private fun PaySheet(
         Column(Modifier.navigationBarsPadding().padding(horizontal = 24.dp, vertical = 8.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(Credits.format(value), style = Display.copy(fontSize = 52.sp), modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+            Text("Dnes ${Credits.format(st.todayUnpaid)} · dluh celkem ${Credits.format(st.balance.coerceAtLeast(0))} · méně zadej na klávesnici",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (st.todayUnpaid in 1 until st.balance) QuickAmount("Dnešek", Modifier.weight(1f)) { amount = st.todayUnpaid.toString(); received = null }
-                QuickAmount("Vše", Modifier.weight(1f)) { amount = st.balance.toString(); received = null }
+                if (st.todayUnpaid > 0) QuickAmount("Dnešek ${st.todayUnpaid}", Modifier.weight(1f)) { amountText = st.todayUnpaid.toString(); received = null }
+                if (st.balance > st.todayUnpaid) QuickAmount("Celý dluh ${st.balance}", Modifier.weight(1f)) { amountText = st.balance.toString(); received = null }
             }
             Segmented(listOf("Hotově", "QR platba"), if (method == "CASH") 0 else 1) { method = if (it == 0) "CASH" else "QR" }
 
@@ -491,13 +577,13 @@ private fun PaySheet(
                 Keypad(Modifier.fillMaxWidth(),
                     onDigit = { d ->
                         if (editingReceived) received = ((received ?: 0).toString().trimStart('0') + d).take(7).toLong()
-                        else amount = ((if (amount == "0") "" else amount) + d).take(7)
+                        else amountText = ((if (amountText == null) "" else amount) + d).trimStart('0').take(7)
                     },
                     onBack = {
                         if (editingReceived) received = (received ?: 0).toString().dropLast(1).toLongOrNull() ?: 0
-                        else amount = amount.dropLast(1)
+                        else amountText = amount.dropLast(1)
                     },
-                    onClear = { if (editingReceived) received = 0 else amount = "" })
+                    onClear = { if (editingReceived) received = 0 else amountText = "" })
                 received?.let { r ->
                     val change = r - value
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))

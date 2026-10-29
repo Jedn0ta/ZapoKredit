@@ -134,3 +134,12 @@ data class Supplier(
     val email: String = "",
     val note: String = "",      // what they supply, delivery days…
 )
+
+/** Full kegs waiting in the cellar, per beer. */
+@Entity(tableName = "keg_stock")
+data class KegStock(
+    @PrimaryKey val kegGroup: String,
+    val count: Int = 0,
+    val minCount: Int = 1,          // at or below → keg goes on the shopping list
+    val sizeLiters: Double = 50.0,  // usual keg size for this beer
+)

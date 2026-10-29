@@ -142,6 +142,20 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
         if (closeVisitAfter) closeVisit(memberId)
     }
 
+    /** One line of a not-yet-written order. productId == null → custom amount. */
+    data class CartItem(val productId: Long?, val description: String, val unitPrice: Long, val qty: Double)
+
+    /** Write the whole order to the member's tab at once ("na futro"). */
+    suspend fun chargeCart(memberId: Long, items: List<CartItem>) = db.withTransaction {
+        items.forEach { i ->
+            if (i.productId != null) chargeProduct(memberId, i.productId, i.qty, i.unitPrice)
+            else chargeCustom(memberId, i.description, Math.round(i.unitPrice * i.qty))
+        }
+    }
+
+    suspend fun lastChargeEntry(memberId: Long): LedgerEntry? =
+        db.ledger().lastCharge(memberId)?.takeIf { db.ledger().voidCount(it.id) == 0 }
+
     /** Round: the same product written to several members at once. */
     suspend fun chargeRound(memberIds: Collection<Long>, productId: Long) = db.withTransaction {
         memberIds.forEach { chargeProduct(it, productId) }
@@ -288,11 +302,37 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
     fun activeKegs() = db.kegs().observeActive()
     fun kegGroups() = db.kegs().observeGroups()
 
-    /** Tap a new keg: the previous one of the same beer is marked finished. */
-    suspend fun tapKeg(group: String, sizeLiters: Double) = db.withTransaction {
+    fun kegStock() = db.kegs().observeStock()
+
+    private suspend fun stockOf(group: String) = db.kegs().stock(group) ?: cz.klubpos.data.db.entity.KegStock(group)
+
+    /** Set how many full kegs are in the cellar (and optionally min / usual size). */
+    suspend fun setKegStock(group: String, count: Int? = null, minCount: Int? = null, sizeLiters: Double? = null) {
+        val s = stockOf(group)
+        val n = s.copy(count = (count ?: s.count).coerceAtLeast(0), minCount = (minCount ?: s.minCount).coerceAtLeast(0),
+            sizeLiters = sizeLiters ?: s.sizeLiters)
+        db.kegs().upsertStock(n)
+        suggestKegIfLow(n)
+    }
+
+    private suspend fun suggestKegIfLow(s: cz.klubpos.data.db.entity.KegStock) {
+        if (s.count > s.minCount) return
+        val name = "Sud ${s.kegGroup}"
+        if (db.shopping().observeAll().first().any { !it.done && it.name == name }) return
+        db.shopping().insert(ShoppingItem(name = name, quantity = 1.0, unit = "sud ${fmtL(s.sizeLiters)} l"))
+    }
+
+    private fun fmtL(v: Double) = if (v % 1.0 == 0.0) v.toLong().toString() else v.toString()
+
+    /** Tap a new keg: the previous one is marked finished and one full keg is taken from the cellar. */
+    suspend fun tapKeg(group: String, sizeLiters: Double, fromStock: Boolean = true) = db.withTransaction {
         val now = System.currentTimeMillis()
         db.kegs().finishActive(group, now)
         db.kegs().insert(cz.klubpos.data.db.entity.Keg(kegGroup = group, sizeLiters = sizeLiters, tappedAt = now))
+        val s = stockOf(group)
+        val n = s.copy(count = if (fromStock) (s.count - 1).coerceAtLeast(0) else s.count, sizeLiters = sizeLiters)
+        db.kegs().upsertStock(n)
+        suggestKegIfLow(n)
     }
 
     suspend fun finishKeg(group: String) = db.kegs().finishActive(group, System.currentTimeMillis())
@@ -357,6 +397,8 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
         listOf("Jan Novák" to "Honza", "Petr Svoboda" to null, "Marie Dvořáková" to "Mája",
             "Karel Černý" to "Kája", "Eva Procházková" to null, "Tomáš Veselý" to "Tom")
             .forEach { (n, nick) -> addMember(n, nick) }
+        setKegStock("Pivo 12°", count = 3, minCount = 1, sizeLiters = 50.0)
+        setKegStock("Pivo 10°", count = 2, minCount = 1, sizeLiters = 30.0)
         tapKeg("Pivo 12°", 50.0)
         tapKeg("Pivo 10°", 30.0)
     }

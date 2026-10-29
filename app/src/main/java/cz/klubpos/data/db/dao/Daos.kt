@@ -8,6 +8,7 @@ import cz.klubpos.data.db.entity.LedgerEntry
 import cz.klubpos.data.db.entity.Bartender
 import cz.klubpos.data.db.entity.Keg
 import cz.klubpos.data.db.entity.Supplier
+import cz.klubpos.data.db.entity.KegStock
 import cz.klubpos.data.db.entity.Member
 import cz.klubpos.data.db.entity.Product
 import cz.klubpos.data.db.entity.ShoppingItem
@@ -212,6 +213,10 @@ interface KegDao {
     /** Keg groups defined on products (to offer "Narazit" even when no keg is active). */
     @Query("SELECT DISTINCT kegGroup FROM products WHERE kegGroup IS NOT NULL AND kegGroup != '' AND active = 1 ORDER BY kegGroup")
     fun observeGroups(): Flow<List<String>>
+
+    @Query("SELECT * FROM keg_stock") fun observeStock(): Flow<List<KegStock>>
+    @Query("SELECT * FROM keg_stock WHERE kegGroup = :group") suspend fun stock(group: String): KegStock?
+    @androidx.room.Upsert suspend fun upsertStock(s: KegStock)
 
     @Query("SELECT MAX(pourMl) FROM products WHERE kegGroup = :group")
     suspend fun largestPour(group: String): Int?
