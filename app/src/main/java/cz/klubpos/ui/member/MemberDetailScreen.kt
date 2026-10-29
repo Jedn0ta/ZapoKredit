@@ -162,7 +162,8 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
 
     // The order being put together – written to the tab only with "Na futro" (or before paying).
     val cart = remember { mutableStateListOf<CartLine>() }
-    val cartTotal = cart.sumOf { Math.round(it.unitPrice * it.qty) }
+    // X+Y deals: free pieces are not charged
+    val cartTotal = cart.sumOf { Math.round(it.unitPrice * (it.qty - (it.product?.freeOf(it.qty) ?: 0))) }
     val cartCount = remember(cart.toList()) { cart.filter { it.product != null }.groupBy { it.product!!.id }.mapValues { e -> e.value.sumOf { it.qty } } }
 
     var showPay by remember { mutableStateOf(false) }
@@ -418,7 +419,7 @@ private fun ProductGrid(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             itemsIndexed(local, key = { _, p -> p.id }) { i, p ->
-                ProductKey(p, counts[p.id] ?: 0.0, promo = p.promoActive(now),
+                ProductKey(p, counts[p.id] ?: 0.0, promo = p.currentPrice(now) != p.price,
                     (if (i == 0) Modifier.tourTarget("product_key") else Modifier).reorderItem(reorder, p.id),
                     onTap = { onTap(p) }, onMinus = { onMinus(p) })
             }
@@ -471,14 +472,15 @@ private fun ProductKey(p: Product, count: Double, promo: Boolean = false, modifi
                 overflow = TextOverflow.Ellipsis, color = Color.White, modifier = Modifier.padding(top = 4.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
                 if (promo) Row(verticalAlignment = Alignment.Bottom) {
-                    Text("${p.promoPrice}", style = Display.copy(fontSize = 22.sp), color = KlubColors.Gold)
+                    Text("${p.currentPrice()}", style = Display.copy(fontSize = 22.sp), color = KlubColors.Gold)
                     Text(" ${p.price}", style = MaterialTheme.typography.bodySmall, color = KlubColors.Muted,
                         textDecoration = TextDecoration.LineThrough)
                 } else Text("${p.price}", style = Display.copy(fontSize = 22.sp), color = accent)
                 if (low) Box(Modifier.size(8.dp).clip(CircleShape).background(KlubColors.OldDebt))
             }
         }
-        if (promo && count == 0.0) Text("HH", Modifier.align(Alignment.TopEnd).padding(6.dp).clip(RoundedCornerShape(6.dp))
+        val badge = when { p.promoActive() -> "HH"; p.saleActive() -> "AKCE"; p.dealActive() -> "${p.dealBuy}+${p.dealFree}"; else -> null }
+        if (badge != null && count == 0.0) Text(badge, Modifier.align(Alignment.TopEnd).padding(6.dp).clip(RoundedCornerShape(6.dp))
             .background(KlubColors.GoldBrush).padding(horizontal = 5.dp, vertical = 1.dp),
             color = KlubColors.Ink, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
         if (count > 0) Box(Modifier.align(Alignment.TopStart).padding(4.dp).size(36.dp).clip(CircleShape)
@@ -518,8 +520,15 @@ private fun Receipt(
                     Text(fmtQty(l.qty), style = Display.copy(fontSize = 18.sp), color = KlubColors.Gold, modifier = Modifier.width(32.dp),
                         textAlign = TextAlign.Center)
                     IconButton({ onCartPlus(l) }) { Icon(Icons.Default.Add, "Přidat", tint = KlubColors.Muted) }
-                    Text(l.desc, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("${Math.round(l.unitPrice * l.qty)}", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(end = 8.dp))
+                    val free = l.product?.freeOf(l.qty) ?: 0
+                    Column(Modifier.weight(1f)) {
+                        Text(l.desc, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (free > 0) Text("$free zdarma (${l.product!!.dealBuy}+${l.product.dealFree})", color = KlubColors.PaidToday,
+                            style = MaterialTheme.typography.labelSmall)
+                        else if (l.product?.dealActive() == true) Text("akce ${l.product.dealBuy}+${l.product.dealFree} zdarma",
+                            color = KlubColors.Muted, style = MaterialTheme.typography.labelSmall)
+                    }
+                    Text("${Math.round(l.unitPrice * (l.qty - free))}", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(end = 8.dp))
                 }
             }
         }

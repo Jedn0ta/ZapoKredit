@@ -118,6 +118,10 @@ fun ProductsScreen() {
                         }
                         Column(horizontalAlignment = Alignment.End) {
                             Text(Credits.format(p.price), fontWeight = FontWeight.Bold)
+                            if (p.salePrice != null) Text("AKCE ${p.salePrice}" + (p.saleLeft?.let { " · ${it.toInt()} ks" } ?: ""),
+                                style = MaterialTheme.typography.labelSmall, color = cz.klubpos.ui.theme.KlubColors.OpenTab)
+                            if (p.dealActive()) Text("${p.dealBuy}+${p.dealFree} zdarma",
+                                style = MaterialTheme.typography.labelSmall, color = cz.klubpos.ui.theme.KlubColors.PaidToday)
                             if (p.promoPrice != null) Text("HH ${p.promoPrice} · ${cz.klubpos.ui.components.fmtTime(p.promoFrom)}–${cz.klubpos.ui.components.fmtTime(p.promoTo)}",
                                 style = MaterialTheme.typography.labelSmall, color = cz.klubpos.ui.theme.KlubColors.Gold)
                         }
@@ -163,7 +167,24 @@ private fun ProductDialog(p: Product, onDismiss: () -> Unit, onImage: () -> Unit
         val m = parts.getOrNull(1)?.toIntOrNull() ?: 0
         return if (h in 0..24 && m in 0..59) (h % 24) * 60 + m else null
     }
-    val promoValid = !promoOn || (promoPrice.toLongOrNull() != null && parseTime(promoFrom) != null && parseTime(promoTo) != null && promoDays != 0)
+    // ---- sale (akční cena) ----
+    val df = remember { java.text.SimpleDateFormat("d.M.yyyy", java.util.Locale("cs", "CZ")).apply { isLenient = false } }
+    fun parseDate(t: String): Long? = runCatching { df.parse(t.trim().replace(" ", ""))?.time }.getOrNull()
+    var saleOn by remember { mutableStateOf(p.salePrice != null) }
+    var salePrice by remember { mutableStateOf(p.salePrice?.toString() ?: "") }
+    var saleFrom by remember { mutableStateOf(df.format(java.util.Date(p.saleFrom ?: System.currentTimeMillis()))) }
+    var saleTo by remember { mutableStateOf(p.saleTo?.let { df.format(java.util.Date(it - 1)) } ?: "") }
+    var saleUntilSoldOut by remember { mutableStateOf(p.saleLeft != null) }
+    var saleLeft by remember { mutableStateOf(p.saleLeft?.toInt()?.toString() ?: if (p.trackStock) p.stockQty.toInt().toString() else "") }
+    val saleValid = !saleOn || (salePrice.toLongOrNull() != null && parseDate(saleFrom) != null &&
+        (saleTo.isBlank() || parseDate(saleTo) != null) && (!saleUntilSoldOut || (saleLeft.toIntOrNull() ?: 0) > 0))
+    // ---- deal X+Y ----
+    var dealOn by remember { mutableStateOf(p.dealActive()) }
+    var dealBuy by remember { mutableStateOf(if (p.dealBuy > 0) p.dealBuy.toString() else "3") }
+    var dealFree by remember { mutableStateOf(if (p.dealFree > 0) p.dealFree.toString() else "1") }
+    val dealValid = !dealOn || ((dealBuy.toIntOrNull() ?: 0) > 0 && (dealFree.toIntOrNull() ?: 0) > 0)
+    val hhValid = !promoOn || (promoPrice.toLongOrNull() != null && parseTime(promoFrom) != null && parseTime(promoTo) != null && promoDays != 0)
+    val promoValid = hhValid && saleValid && dealValid
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -216,6 +237,46 @@ private fun ProductDialog(p: Product, onDismiss: () -> Unit, onImage: () -> Unit
                     Text("Čas např. 17:00 – 20:00. Přes půlnoc (22:00 – 2:00) funguje taky.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                // ---- Akční cena ----
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(saleOn, { saleOn = it }); Spacer(Modifier.width(8.dp)); Text("Akční cena (delší doba / do vyprodání)")
+                }
+                if (saleOn) {
+                    OutlinedTextField(salePrice, { salePrice = it.filter(Char::isDigit) }, label = { Text("Akční cena (kr)") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(saleFrom, { saleFrom = it }, label = { Text("Od (d.m.rrrr)") }, singleLine = true,
+                            modifier = Modifier.weight(1f), isError = parseDate(saleFrom) == null)
+                        OutlinedTextField(saleTo, { saleTo = it }, label = { Text("Do (prázdné = bez konce)") }, singleLine = true,
+                            modifier = Modifier.weight(1f), isError = saleTo.isNotBlank() && parseDate(saleTo) == null)
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(7 to "+7 dní", 14 to "+14 dní", 30 to "+30 dní").forEach { (d, l) ->
+                            androidx.compose.material3.AssistChip({
+                                val start = parseDate(saleFrom) ?: System.currentTimeMillis()
+                                saleTo = df.format(java.util.Date(start + (d - 1) * 86_400_000L))
+                            }, label = { Text(l) })
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.Checkbox(saleUntilSoldOut, { saleUntilSoldOut = it })
+                        Text("Do vyprodání –", Modifier.padding(end = 8.dp))
+                        OutlinedTextField(saleLeft, { saleLeft = it.filter(Char::isDigit) }, label = { Text("ks za akční cenu") }, singleLine = true,
+                            enabled = saleUntilSoldOut, modifier = Modifier.width(150.dp),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                    }
+                }
+                // ---- Akce X + Y zdarma ----
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(dealOn, { dealOn = it }); Spacer(Modifier.width(8.dp)); Text("Akce X + Y zdarma")
+                }
+                if (dealOn) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(dealBuy, { dealBuy = it.filter(Char::isDigit).take(2) }, label = { Text("Kup") }, singleLine = true,
+                        modifier = Modifier.width(90.dp), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                    Text("+", style = MaterialTheme.typography.titleLarge)
+                    OutlinedTextField(dealFree, { dealFree = it.filter(Char::isDigit).take(2) }, label = { Text("zdarma") }, singleLine = true,
+                        modifier = Modifier.width(90.dp), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) { Switch(active, { active = it }); Spacer(Modifier.width(8.dp)); Text("Aktivní (nabízet barmanovi)") }
                 if (p.id != 0L) OutlinedButton(onClick = onImage) { Text("Nahrát obrázek přes QR") }
             }
@@ -227,7 +288,13 @@ private fun ProductDialog(p: Product, onDismiss: () -> Unit, onImage: () -> Unit
                     kegGroup = if (draught) kegGroup.trim().ifBlank { null } else null,
                     pourMl = if (draught) pourMl.toIntOrNull() ?: 500 else 0,
                     promoPrice = if (promoOn) promoPrice.toLongOrNull() else null,
-                    promoDays = promoDays, promoFrom = parseTime(promoFrom) ?: p.promoFrom, promoTo = parseTime(promoTo) ?: p.promoTo))
+                    promoDays = promoDays, promoFrom = parseTime(promoFrom) ?: p.promoFrom, promoTo = parseTime(promoTo) ?: p.promoTo,
+                    salePrice = if (saleOn) salePrice.toLongOrNull() else null,
+                    saleFrom = if (saleOn) parseDate(saleFrom) else null,
+                    saleTo = if (saleOn) parseDate(saleTo)?.plus(86_400_000L) else null,   // "do" date is inclusive
+                    saleLeft = if (saleOn && saleUntilSoldOut) saleLeft.toDoubleOrNull() else null,
+                    dealBuy = if (dealOn) dealBuy.toIntOrNull() ?: 0 else 0,
+                    dealFree = if (dealOn) dealFree.toIntOrNull() ?: 0 else 0))
             }) { Text("Uložit") }
         },
         dismissButton = { TextButton(onDismiss) { Text("Zrušit") } },

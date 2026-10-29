@@ -43,30 +43,52 @@ fun rememberMinuteClock(): LocalDateTime {
 
 fun fmtTime(min: Int) = "%d:%02d".format((min / 60) % 24, min % 60)
 
-/** Gold strip on Home while any promo runs: "Happy hour · Pivo 12° 39 kr (55) · do 20:00". */
+/** Strip on Home while anything is on offer: happy hour (gold), sales and X+Y deals. */
 @Composable
 fun HappyHourStrip(modifier: Modifier = Modifier) {
     val repo = rememberRepo()
     val products by repo.activeProducts().collectAsState(initial = emptyList())
     val now = rememberMinuteClock()
-    val active = products.filter { it.promoActive(now) }
-    if (active.isEmpty()) return
+    val hh = products.filter { it.promoActive(now) }
+    val sale = products.filter { !it.promoActive(now) && it.saleActive() }
+    val deals = products.filter { it.dealActive() }
+    if (hh.isEmpty() && sale.isEmpty() && deals.isEmpty()) return
     Row(modifier.tourTarget("happy_hour").fillMaxWidth().clip(RoundedCornerShape(16.dp))
-        .background(Brush.linearGradient(GoldMetal.map { it.copy(alpha = 0.9f) }))
+        .background(if (hh.isNotEmpty()) Brush.linearGradient(GoldMetal.map { it.copy(alpha = 0.9f) })
+            else Brush.linearGradient(listOf(KlubColors.SurfaceHigh, KlubColors.Surface)))
         .horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        Text("🍻 HAPPY HOUR", color = KlubColors.Ink, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
-        active.forEach { p -> PromoChip(p) }
+        val ink = if (hh.isNotEmpty()) KlubColors.Ink else KlubColors.Cream
+        if (hh.isNotEmpty()) {
+            Text("🍻 HAPPY HOUR", color = ink, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+            hh.forEach { p -> PriceChip(p.name, p.promoPrice!!, p.price, "do ${fmtTime(p.promoTo)}", ink) }
+        }
+        if (sale.isNotEmpty()) {
+            Text("🏷 AKCE", color = ink, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+            sale.forEach { p ->
+                val until = when {
+                    p.saleLeft != null -> "zbývá ${p.saleLeft.toInt()} ks"
+                    p.saleTo != null -> "do " + java.text.SimpleDateFormat("d. M.", java.util.Locale("cs", "CZ")).format(java.util.Date(p.saleTo - 1))
+                    else -> ""
+                }
+                PriceChip(p.name, p.salePrice!!, p.price, until, ink)
+            }
+        }
+        if (deals.isNotEmpty()) {
+            Text("🎁", style = MaterialTheme.typography.labelLarge)
+            deals.forEach { p ->
+                Text("${p.name} ${p.dealBuy}+${p.dealFree} zdarma", color = ink, fontWeight = FontWeight.SemiBold)
+            }
+        }
     }
 }
 
 @Composable
-private fun PromoChip(p: Product) {
+private fun PriceChip(name: String, price: Long, old: Long, note: String, ink: androidx.compose.ui.graphics.Color) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(p.name, color = KlubColors.Ink, fontWeight = FontWeight.SemiBold)
-        Text("${p.promoPrice} kr", color = KlubColors.Ink, fontWeight = FontWeight.ExtraBold)
-        Text("${p.price}", color = KlubColors.Ink.copy(alpha = 0.6f), textDecoration = TextDecoration.LineThrough,
-            style = MaterialTheme.typography.bodySmall)
-        Text("do ${fmtTime(p.promoTo)}", color = KlubColors.Ink.copy(alpha = 0.75f), style = MaterialTheme.typography.bodySmall)
+        Text(name, color = ink, fontWeight = FontWeight.SemiBold)
+        Text("$price kr", color = ink, fontWeight = FontWeight.ExtraBold)
+        Text("$old", color = ink.copy(alpha = 0.6f), textDecoration = TextDecoration.LineThrough, style = MaterialTheme.typography.bodySmall)
+        if (note.isNotEmpty()) Text(note, color = ink.copy(alpha = 0.75f), style = MaterialTheme.typography.bodySmall)
     }
 }

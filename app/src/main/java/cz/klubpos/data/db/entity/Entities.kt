@@ -57,7 +57,25 @@ data class Product(
     /** Minutes from midnight; to < from means it runs past midnight. */
     @androidx.room.ColumnInfo(defaultValue = "1020") val promoFrom: Int = 17 * 60,
     @androidx.room.ColumnInfo(defaultValue = "1200") val promoTo: Int = 20 * 60,
+    /** Sale (akční cena): price for a longer period – between dates and/or until [saleLeft] pieces are sold. */
+    @androidx.room.ColumnInfo(defaultValue = "NULL") val salePrice: Long? = null,
+    @androidx.room.ColumnInfo(defaultValue = "NULL") val saleFrom: Long? = null,
+    @androidx.room.ColumnInfo(defaultValue = "NULL") val saleTo: Long? = null,
+    /** Pieces left at the sale price ("do vyprodání"); null = no piece limit. */
+    @androidx.room.ColumnInfo(defaultValue = "NULL") val saleLeft: Double? = null,
+    /** Deal "buy X get Y free" (e.g. 3+1). dealBuy = 0 → off. */
+    @androidx.room.ColumnInfo(defaultValue = "0") val dealBuy: Int = 0,
+    @androidx.room.ColumnInfo(defaultValue = "0") val dealFree: Int = 0,
 ) {
+    fun saleActive(nowMs: Long = System.currentTimeMillis()): Boolean =
+        salePrice != null && (saleFrom == null || nowMs >= saleFrom) && (saleTo == null || nowMs < saleTo) &&
+            (saleLeft == null || saleLeft > 0.0)
+
+    fun dealActive() = dealBuy > 0 && dealFree > 0
+
+    /** How many of [qty] pieces are free under the X+Y deal. */
+    fun freeOf(qty: Double): Int = if (!dealActive()) 0 else (qty.toInt() / (dealBuy + dealFree)) * dealFree
+
     /** Is the promo running at [now]? For overnight promos the day is the day it started. */
     fun promoActive(now: java.time.LocalDateTime = java.time.LocalDateTime.now()): Boolean {
         if (promoPrice == null) return false
@@ -68,8 +86,11 @@ data class Product(
     }
 
     /** Price charged right now (happy hour aware). */
-    fun currentPrice(now: java.time.LocalDateTime = java.time.LocalDateTime.now()): Long =
-        if (promoActive(now)) promoPrice!! else price
+    fun currentPrice(now: java.time.LocalDateTime = java.time.LocalDateTime.now()): Long = when {
+        promoActive(now) -> promoPrice!!
+        saleActive() -> salePrice!!
+        else -> price
+    }
 }
 
 /** One stay in the club = "otevřený účet". closedAt == null means the member is in the club now. */

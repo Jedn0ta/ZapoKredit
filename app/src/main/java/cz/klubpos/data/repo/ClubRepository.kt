@@ -124,6 +124,10 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
         db.withTransaction {
             val p = db.products().get(productId) ?: error("Produkt nenalezen")
             val unit = priceOverride ?: p.currentPrice()
+            // "do vyprodání": count down the pieces sold at the sale price
+            if (p.saleLeft != null && p.saleActive() && !p.promoActive() && unit == p.salePrice) {
+                db.products().update(p.copy(saleLeft = (p.saleLeft - qty).coerceAtLeast(0.0)))
+            }
             val visitId = openVisit(memberId)
             val entryId = insertEntry(
                 LedgerEntry(
@@ -172,8 +176,13 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
     /** Write the whole order to the member's tab at once ("na futro"). */
     suspend fun chargeCart(memberId: Long, items: List<CartItem>) = db.withTransaction {
         items.forEach { i ->
-            if (i.productId != null) chargeProduct(memberId, i.productId, i.qty, i.unitPrice)
-            else chargeCustom(memberId, i.description, Math.round(i.unitPrice * i.qty))
+            if (i.productId != null) {
+                val p = db.products().get(i.productId)
+                val free = p?.freeOf(i.qty) ?: 0
+                if (i.qty - free > 0) chargeProduct(memberId, i.productId, i.qty - free, i.unitPrice)
+                // free pieces of an X+Y deal: written at 0 so stock / kegs stay correct
+                if (free > 0) chargeProduct(memberId, i.productId, free.toDouble(), 0)
+            } else chargeCustom(memberId, i.description, Math.round(i.unitPrice * i.qty))
         }
     }
 
