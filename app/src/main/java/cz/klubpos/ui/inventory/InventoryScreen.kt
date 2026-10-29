@@ -80,6 +80,7 @@ fun InventoryScreen() {
                 Segmented(listOf("Vše", "Dochází $lowCount"), if (onlyLow) 1 else 0) { onlyLow = it == 1 }
             }
             LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+                if (!onlyLow) item(key = "kegs") { KegsSection() }
                 itemsIndexed(shown, key = { _, p -> p.id }) { i, p ->
                     val low = p.stockQty <= p.minStock
                     SwipeRow(

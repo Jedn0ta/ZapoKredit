@@ -291,7 +291,12 @@ private fun ProductGrid(
     products: List<Product>, favorites: List<Product>, lastLabel: String?, counts: Map<Long, Double>, modifier: Modifier,
     onTap: (Product) -> Unit, onLong: (Product) -> Unit, onCustom: () -> Unit, onRepeat: () -> Unit,
 ) {
-    val categories = remember(products) { products.map { it.category }.distinct() }
+    val sortAlpha = cz.klubpos.ui.components.rememberSettings().flow.collectAsState().value.productSort == "ALPHA"
+    val products = remember(products, sortAlpha) {
+        if (sortAlpha) products.sortedBy { it.name.lowercase() }
+        else products.sortedWith(compareBy({ it.category.lowercase() }, { it.name.lowercase() }))
+    }
+    val categories = remember(products) { products.map { it.category }.distinct().sortedBy { it.lowercase() } }
     // Default view = everything; "★ Oblíbené" shows what this member usually has.
     var cat by remember { mutableStateOf<String?>(null) }
     Column(modifier) {

@@ -17,6 +17,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.UploadFile
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -62,19 +64,38 @@ fun ProductsScreen() {
     var imageFor by remember { mutableStateOf<Product?>(null) }
     val unlocked = cz.klubpos.ui.owner.rememberOwnerUnlocked()
     var askUnlock by remember { mutableStateOf<Product?>(null) }
+    var showIo by remember { mutableStateOf(false) }
     fun open(p: Product) { if (unlocked) editing = p else askUnlock = p }
-    askUnlock?.let { p -> cz.klubpos.ui.owner.OwnerUnlockDialog(onDismiss = { askUnlock = null }, onUnlocked = { askUnlock = null; editing = p }) }
+    askUnlock?.let { p -> cz.klubpos.ui.owner.OwnerUnlockDialog(onDismiss = { askUnlock = null },
+        onUnlocked = { askUnlock = null; if (p.id == -1L) showIo = true else editing = p }) }
+
+    val settings = cz.klubpos.ui.components.rememberSettings()
+    val cfg by settings.flow.collectAsState()
+    val byType = cfg.productSort != "ALPHA"
+    val sorted = remember(products, byType) {
+        if (byType) products.sortedWith(compareBy({ !it.active }, { it.category.lowercase() }, { it.name.lowercase() }))
+        else products.sortedWith(compareBy({ !it.active }, { it.name.lowercase() }))
+    }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Položky") }, colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(containerColor = androidx.compose.ui.graphics.Color.Transparent)) },
+        topBar = { TopAppBar(title = { Text("Položky") },
+            actions = {
+                cz.klubpos.ui.members.Segmented(listOf("A–Z", "Typ"), if (byType) 1 else 0) { i ->
+                    settings.update { it.copy(productSort = if (i == 0) "ALPHA" else "TYPE") }
+                }
+                IconButton({ if (unlocked) showIo = true else askUnlock = Product(id = -1, name = "", price = 0) }) {
+                    Icon(Icons.Default.UploadFile, "Import / vzor")
+                }
+            },
+            colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(containerColor = androidx.compose.ui.graphics.Color.Transparent)) },
         floatingActionButton = {
             FloatingActionButton(onClick = { open(Product(name = "", price = 0)) }) { Icon(Icons.Default.Add, "Nová položka") }
         },
     ) { pad ->
         LazyColumn(Modifier.padding(pad)) {
             var lastCat: String? = null
-            products.forEach { p ->
-                if (p.category != lastCat) {
+            sorted.forEach { p ->
+                if (byType && p.category != lastCat) {
                     lastCat = p.category
                     item(key = "cat-${p.category}-${p.id}") {
                         Text(p.category, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
@@ -104,6 +125,7 @@ fun ProductsScreen() {
             scope.launch { repo.saveProduct(updated) }; editing = null
         }
     }
+    if (showIo) ImportExportSheet(onDismiss = { showIo = false })
     imageFor?.let { p -> QrUploadDialog("Obrázek: ${p.name}", onImage = { repo.setProductImage(p.id, it) }) { imageFor = null } }
 }
 
@@ -119,6 +141,9 @@ private fun ProductDialog(p: Product, onDismiss: () -> Unit, onImage: () -> Unit
     var active by remember { mutableStateOf(p.active) }
     val num = KeyboardOptions(keyboardType = KeyboardType.Decimal)
     fun d(s: String) = s.replace(',', '.').toDoubleOrNull() ?: 0.0
+    var draught by remember { mutableStateOf(p.kegGroup != null) }
+    var kegGroup by remember { mutableStateOf(p.kegGroup ?: p.name.substringBefore(" velk").substringBefore(" mal")) }
+    var pourMl by remember { mutableStateOf(if (p.pourMl > 0) p.pourMl.toString() else "500") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -129,8 +154,22 @@ private fun ProductDialog(p: Product, onDismiss: () -> Unit, onImage: () -> Unit
                 OutlinedTextField(category, { category = it }, label = { Text("Kategorie") }, singleLine = true)
                 OutlinedTextField(price, { price = it.filter(Char::isDigit) }, label = { Text("Cena (kr)") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-                Row(verticalAlignment = Alignment.CenterVertically) { Switch(track, { track = it }); Spacer(Modifier.width(8.dp)); Text("Sledovat sklad") }
-                if (track) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(draught, { draught = it; if (it) track = false }); Spacer(Modifier.width(8.dp)); Text("Čepuje se ze sudu")
+                }
+                if (draught) {
+                    OutlinedTextField(kegGroup, { kegGroup = it }, label = { Text("Sud (stejný název = stejný sud)") }, singleLine = true,
+                        supportingText = { Text("Např. velké i malé 12° mají sud „Pivo 12°“") })
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        listOf("500", "400", "300").forEach { v ->
+                            androidx.compose.material3.FilterChip(pourMl == v, { pourMl = v }, label = { Text("${v.toInt() / 1000.0} l".replace('.', ',')) })
+                        }
+                        OutlinedTextField(pourMl, { pourMl = it.filter(Char::isDigit) }, label = { Text("ml") }, singleLine = true,
+                            modifier = Modifier.width(90.dp), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                    }
+                }
+                if (!draught) Row(verticalAlignment = Alignment.CenterVertically) { Switch(track, { track = it }); Spacer(Modifier.width(8.dp)); Text("Sledovat sklad") }
+                if (track && !draught) {
                     OutlinedTextField(unit, { unit = it }, label = { Text("Jednotka (ks, l, kg…)") }, singleLine = true)
                     OutlinedTextField(min, { min = it }, label = { Text("Minimální stav (pod ním → nákup)") }, singleLine = true, keyboardOptions = num)
                     OutlinedTextField(reorder, { reorder = it }, label = { Text("Obvykle nakupuji (0 = automaticky)") }, singleLine = true, keyboardOptions = num)
@@ -140,9 +179,11 @@ private fun ProductDialog(p: Product, onDismiss: () -> Unit, onImage: () -> Unit
             }
         },
         confirmButton = {
-            TextButton(enabled = name.isNotBlank() && price.toLongOrNull() != null, onClick = {
+            TextButton(enabled = name.isNotBlank() && price.toLongOrNull() != null && (!draught || kegGroup.isNotBlank()), onClick = {
                 onSave(p.copy(name = name.trim(), category = category.trim().ifBlank { "Ostatní" }, price = price.toLong(),
-                    trackStock = track, unit = unit.ifBlank { "ks" }, minStock = d(min), reorderQty = d(reorder), active = active))
+                    trackStock = track && !draught, unit = unit.ifBlank { "ks" }, minStock = d(min), reorderQty = d(reorder), active = active,
+                    kegGroup = if (draught) kegGroup.trim().ifBlank { null } else null,
+                    pourMl = if (draught) pourMl.toIntOrNull() ?: 500 else 0))
             }) { Text("Uložit") }
         },
         dismissButton = { TextButton(onDismiss) { Text("Zrušit") } },

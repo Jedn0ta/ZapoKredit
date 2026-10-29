@@ -131,6 +131,10 @@ fun SettingsScreen(onStartTour: () -> Unit = {}) {
             Text("Barmani", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
             BartendersSection(canEdit = unlocked, onRequestUnlock = { askUnlock = true })
 
+            // ---------- Dodavatelé ----------
+            Text("Dodavatelé", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            cz.klubpos.ui.suppliers.SuppliersSection()
+
             // ---------- Průvodce ----------
             Card(Modifier.fillMaxWidth(), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f))) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {

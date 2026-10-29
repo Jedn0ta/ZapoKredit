@@ -2,4 +2,6 @@
 <paths>
     <!-- Only the downloaded update APKs are shared with the installer. -->
     <cache-path name="updates" path="updates/" />
+    <!-- Exported templates / lists shared via other apps. -->
+    <cache-path name="exports" path="exports/" />
 </paths>

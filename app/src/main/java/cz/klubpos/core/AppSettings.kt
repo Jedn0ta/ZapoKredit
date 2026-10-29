@@ -20,6 +20,8 @@ data class Settings(
     val tourDone: Boolean = false,
     /** Log the bartender out after this many minutes without touching the screen. 0 = never. */
     val autoLockMinutes: Int = 0,
+    /** Product ordering: "ALPHA" = A–Z, "TYPE" = by category (jídlo / alko / limo…) then A–Z. */
+    val productSort: String = "TYPE",
 )
 
 /** Small encrypted key-value store for app configuration. */
@@ -40,6 +42,7 @@ class AppSettings(context: Context) {
         keepScreenOn = prefs.getBoolean("keepScreenOn", true),
         tourDone = prefs.getBoolean("tourDone", false),
         autoLockMinutes = prefs.getInt("autoLockMinutes", 0),
+        productSort = prefs.getString("productSort", "TYPE") ?: "TYPE",
     )
 
     fun update(transform: (Settings) -> Settings) {
@@ -51,6 +54,7 @@ class AppSettings(context: Context) {
             .putBoolean("keepScreenOn", s.keepScreenOn)
             .putBoolean("tourDone", s.tourDone)
             .putInt("autoLockMinutes", s.autoLockMinutes)
+            .putString("productSort", s.productSort)
             .apply()
         _flow.value = s
     }

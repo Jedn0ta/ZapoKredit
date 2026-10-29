@@ -32,6 +32,10 @@ data class Product(
     val reorderQty: Double = 0.0,    // suggested buy amount (0 = fill up to 2× minStock)
     val active: Boolean = true,
     val sortOrder: Int = 0,
+    /** Draught beer: name of the keg it is tapped from (e.g. "Plzeň 12°"); several sizes can share one keg. */
+    @androidx.room.ColumnInfo(defaultValue = "NULL") val kegGroup: String? = null,
+    /** Millilitres per serving taken from the keg (500 = velké, 300 = malé). */
+    @androidx.room.ColumnInfo(defaultValue = "0") val pourMl: Int = 0,
 )
 
 /** One stay in the club = "otevřený účet". closedAt == null means the member is in the club now. */
@@ -109,4 +113,24 @@ data class Bartender(
     val colorIndex: Int = 0,
     val active: Boolean = true,
     val createdAt: Long = System.currentTimeMillis(),
+)
+
+/** A keg on tap. Active = finishedAt == null. Poured volume is computed from sales since [tappedAt]. */
+@Entity(tableName = "kegs", indices = [Index("kegGroup")])
+data class Keg(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val kegGroup: String,
+    val sizeLiters: Double,
+    val tappedAt: Long = System.currentTimeMillis(),
+    val finishedAt: Long? = null,
+)
+
+/** Who to call / message when restocking. */
+@Entity(tableName = "suppliers")
+data class Supplier(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val phone: String = "",
+    val email: String = "",
+    val note: String = "",      // what they supply, delivery days…
 )

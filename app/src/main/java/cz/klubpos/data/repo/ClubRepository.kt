@@ -283,13 +283,69 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
     suspend fun deleteShoppingItem(id: Long) = db.shopping().delete(id)
     suspend fun clearBought() = db.shopping().clearDone()
 
+    // ---------- Kegs ----------
+
+    fun activeKegs() = db.kegs().observeActive()
+    fun kegGroups() = db.kegs().observeGroups()
+
+    /** Tap a new keg: the previous one of the same beer is marked finished. */
+    suspend fun tapKeg(group: String, sizeLiters: Double) = db.withTransaction {
+        val now = System.currentTimeMillis()
+        db.kegs().finishActive(group, now)
+        db.kegs().insert(cz.klubpos.data.db.entity.Keg(kegGroup = group, sizeLiters = sizeLiters, tappedAt = now))
+    }
+
+    suspend fun finishKeg(group: String) = db.kegs().finishActive(group, System.currentTimeMillis())
+    suspend fun largestPour(group: String) = db.kegs().largestPour(group) ?: 500
+
+    // ---------- Suppliers ----------
+
+    fun suppliers() = db.suppliers().observeAll()
+    suspend fun saveSupplier(s: cz.klubpos.data.db.entity.Supplier) =
+        if (s.id == 0L) db.suppliers().insert(s) else { db.suppliers().update(s); s.id }
+    suspend fun deleteSupplier(id: Long) = db.suppliers().delete(id)
+
+    // ---------- Import ----------
+
+    data class ImportResult(val added: Int, val updated: Int, val skipped: List<String>)
+
+    /** Upsert products by name (case-insensitive). Stock is only changed when the row contains a value. */
+    suspend fun importProducts(rows: List<cz.klubpos.core.io.ProductRow>): ImportResult = db.withTransaction {
+        val existing = db.products().all().associateBy { it.name.trim().lowercase() }
+        var added = 0; var updated = 0
+        val skipped = mutableListOf<String>()
+        for (r in rows) {
+            if (r.name.isBlank() || r.price == null) { skipped += r.name.ifBlank { "(prázdný název)" }; continue }
+            val old = existing[r.name.trim().lowercase()]
+            val base = old ?: Product(name = r.name.trim(), price = r.price)
+            val p = base.copy(
+                name = r.name.trim(),
+                category = r.category?.ifBlank { null } ?: base.category,
+                price = r.price,
+                unit = r.unit?.ifBlank { null } ?: base.unit,
+                trackStock = r.trackStock ?: base.trackStock,
+                stockQty = r.stock ?: base.stockQty,
+                minStock = r.minStock ?: base.minStock,
+                reorderQty = r.reorderQty ?: base.reorderQty,
+                kegGroup = r.kegGroup?.ifBlank { null } ?: base.kegGroup,
+                pourMl = r.pourMl ?: base.pourMl,
+                active = true,
+            )
+            if (old == null) { db.products().insert(p); added++ } else { db.products().update(p); updated++ }
+        }
+        ImportResult(added, updated, skipped)
+    }
+
+    suspend fun allProductsOnce() = db.products().all()
+
     // ---------- Demo data ----------
 
     suspend fun seedIfEmpty() {
         if (db.members().count() > 0) return
         listOf(
-            Product(name = "Pivo 10°", category = "Pivo", price = 45, unit = "ks", stockQty = 40.0, minStock = 20.0, reorderQty = 50.0),
-            Product(name = "Pivo 12°", category = "Pivo", price = 55, unit = "ks", stockQty = 12.0, minStock = 20.0, reorderQty = 50.0),
+            Product(name = "Pivo 12° velké", category = "Pivo", price = 55, trackStock = false, kegGroup = "Pivo 12°", pourMl = 500),
+            Product(name = "Pivo 12° malé", category = "Pivo", price = 35, trackStock = false, kegGroup = "Pivo 12°", pourMl = 300),
+            Product(name = "Pivo 10°", category = "Pivo", price = 45, trackStock = false, kegGroup = "Pivo 10°", pourMl = 500),
             Product(name = "Nealko pivo", category = "Pivo", price = 40, unit = "ks", stockQty = 8.0, minStock = 6.0),
             Product(name = "Víno bílé 0,2", category = "Víno", price = 60, unit = "l", trackStock = false),
             Product(name = "Rum 4 cl", category = "Lihoviny", price = 70, trackStock = false),
@@ -301,5 +357,7 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
         listOf("Jan Novák" to "Honza", "Petr Svoboda" to null, "Marie Dvořáková" to "Mája",
             "Karel Černý" to "Kája", "Eva Procházková" to null, "Tomáš Veselý" to "Tom")
             .forEach { (n, nick) -> addMember(n, nick) }
+        tapKeg("Pivo 12°", 50.0)
+        tapKeg("Pivo 10°", 30.0)
     }
 }

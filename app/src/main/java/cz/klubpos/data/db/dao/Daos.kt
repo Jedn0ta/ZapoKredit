@@ -6,6 +6,8 @@ import androidx.room.Query
 import androidx.room.Update
 import cz.klubpos.data.db.entity.LedgerEntry
 import cz.klubpos.data.db.entity.Bartender
+import cz.klubpos.data.db.entity.Keg
+import cz.klubpos.data.db.entity.Supplier
 import cz.klubpos.data.db.entity.Member
 import cz.klubpos.data.db.entity.Product
 import cz.klubpos.data.db.entity.ShoppingItem
@@ -127,6 +129,7 @@ interface ProductDao {
     @Insert suspend fun insert(p: Product): Long
     @Update suspend fun update(p: Product)
     @Query("SELECT * FROM products WHERE id = :id") suspend fun get(id: Long): Product?
+    @Query("SELECT * FROM products") suspend fun all(): List<Product>
     @Query("SELECT * FROM products WHERE active = 1 ORDER BY category, sortOrder, name COLLATE NOCASE")
     fun observeActive(): Flow<List<Product>>
     @Query("SELECT * FROM products ORDER BY active DESC, category, name COLLATE NOCASE")
@@ -176,4 +179,48 @@ interface BartenderDao {
         """
     )
     fun observeSales(since: Long): Flow<List<BartenderSales>>
+}
+
+/** Active keg + how much has been poured from it (litres), computed from non-voided sales. */
+data class KegStatus(
+    val id: Long, val kegGroup: String, val sizeLiters: Double, val tappedAt: Long,
+    val pouredLiters: Double, val servings: Double,
+)
+
+@Dao
+interface KegDao {
+    @Insert suspend fun insert(k: Keg): Long
+    @Query("UPDATE kegs SET finishedAt = :at WHERE kegGroup = :group AND finishedAt IS NULL")
+    suspend fun finishActive(group: String, at: Long)
+
+    @Query(
+        """
+        SELECT k.id, k.kegGroup, k.sizeLiters, k.tappedAt,
+          COALESCE((SELECT SUM(l.quantity * p.pourMl) / 1000.0 FROM ledger l JOIN products p ON p.id = l.productId
+                    WHERE p.kegGroup = k.kegGroup AND l.type = 'CHARGE' AND l.voidsEntryId IS NULL
+                      AND l.createdAt >= k.tappedAt
+                      AND NOT EXISTS (SELECT 1 FROM ledger v WHERE v.voidsEntryId = l.id)), 0) AS pouredLiters,
+          COALESCE((SELECT SUM(l.quantity) FROM ledger l JOIN products p ON p.id = l.productId
+                    WHERE p.kegGroup = k.kegGroup AND l.type = 'CHARGE' AND l.voidsEntryId IS NULL
+                      AND l.createdAt >= k.tappedAt
+                      AND NOT EXISTS (SELECT 1 FROM ledger v WHERE v.voidsEntryId = l.id)), 0) AS servings
+        FROM kegs k WHERE k.finishedAt IS NULL ORDER BY k.kegGroup
+        """
+    )
+    fun observeActive(): Flow<List<KegStatus>>
+
+    /** Keg groups defined on products (to offer "Narazit" even when no keg is active). */
+    @Query("SELECT DISTINCT kegGroup FROM products WHERE kegGroup IS NOT NULL AND kegGroup != '' AND active = 1 ORDER BY kegGroup")
+    fun observeGroups(): Flow<List<String>>
+
+    @Query("SELECT MAX(pourMl) FROM products WHERE kegGroup = :group")
+    suspend fun largestPour(group: String): Int?
+}
+
+@Dao
+interface SupplierDao {
+    @Insert suspend fun insert(s: Supplier): Long
+    @Update suspend fun update(s: Supplier)
+    @Query("DELETE FROM suppliers WHERE id = :id") suspend fun delete(id: Long)
+    @Query("SELECT * FROM suppliers ORDER BY name COLLATE NOCASE") fun observeAll(): Flow<List<Supplier>>
 }

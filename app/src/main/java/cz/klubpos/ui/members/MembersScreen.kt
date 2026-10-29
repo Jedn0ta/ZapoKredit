@@ -5,6 +5,8 @@ package cz.klubpos.ui.members
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -122,6 +124,8 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
             SearchField(query, { query = it }, Modifier.weight(1f).tourTarget("search"))
             Segmented(Filter.entries.map { it.label }, filter.ordinal) { filter = Filter.entries[it] }
         }
+        // Beer kegs on tap – level at a glance
+        cz.klubpos.ui.inventory.KegStrip(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp))
         Box(Modifier.weight(1f)) {
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(132.dp),

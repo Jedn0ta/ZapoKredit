@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.automirrored.filled.Undo
@@ -77,11 +78,16 @@ fun ShoppingScreen() {
     val done = items.filter { it.done }
     var showAdd by remember { mutableStateOf(false) }
     var qtyFor by remember { mutableStateOf<ShoppingItem?>(null) }
+    var order by remember { mutableStateOf(false) }
+    if (order) cz.klubpos.ui.suppliers.OrderContactsSheet("Objednat zboží", shareText(open, products), onDismiss = { order = false })
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             Row(Modifier.fillMaxWidth().padding(20.dp, 12.dp, 8.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Nákup", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                IconButton(enabled = open.isNotEmpty(), onClick = { order = true }) {
+                    Icon(Icons.Default.Call, "Objednat u dodavatele")
+                }
                 IconButton(modifier = Modifier.tourTarget("autofill"), onClick = {
                     scope.launch {
                         val n = repo.generateShoppingList()
