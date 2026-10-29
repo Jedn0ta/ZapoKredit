@@ -1,5 +1,9 @@
 package cz.klubpos.ui.inventory
 
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
+import cz.klubpos.ui.theme.glass
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -79,12 +83,13 @@ fun InventoryScreen() {
                 Text("Sklad", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 Segmented(listOf("Vše", "Dochází $lowCount"), if (onlyLow) 1 else 0) { onlyLow = it == 1 }
             }
-            LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
-                if (!onlyLow) item(key = "kegs") { KegsSection() }
+            androidx.compose.foundation.lazy.grid.LazyVerticalGrid(androidx.compose.foundation.lazy.grid.GridCells.Adaptive(340.dp),
+                contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 24.dp)) {
+                if (!onlyLow) item(key = "kegs", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) { KegsSection() }
                 itemsIndexed(shown, key = { _, p -> p.id }) { i, p ->
                     val low = p.stockQty <= p.minStock
                     SwipeRow(
-                        modifier = if (i == 0) Modifier.tourTarget("stock_row") else Modifier,
+                        modifier = Modifier.padding(6.dp).clip(RoundedCornerShape(18.dp)).then(if (i == 0) Modifier.tourTarget("stock_row") else Modifier),
                         start = SwipeAction(Icons.Default.MoveToInbox, "Naskladnit", KlubColors.PaidToday) { receiveFor = p },
                         end = SwipeAction(Icons.Default.AddShoppingCart, "Do nákupu", KlubColors.Amber) {
                             scope.launch {
@@ -93,8 +98,8 @@ fun InventoryScreen() {
                             }
                         },
                     ) {
-                        Row(Modifier.fillMaxWidth().clickable { countFor = p }
-                            .padding(horizontal = 20.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().glass(RoundedCornerShape(18.dp)).clickable { countFor = p }
+                            .padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.size(10.dp).clip(CircleShape).background(categoryColor(p.category)))
                             Spacer(Modifier.width(14.dp))
                             Text(p.name, Modifier.weight(1f), fontSize = 17.sp)
@@ -103,7 +108,6 @@ fun InventoryScreen() {
                             Text(" ${p.unit}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.surface)
                 }
             }
         }

@@ -1,5 +1,6 @@
 package cz.klubpos.ui.products
 
+import cz.klubpos.ui.theme.glass
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -62,6 +63,8 @@ fun ProductsScreen() {
     val products by repo.allProducts().collectAsState(initial = emptyList())
     var editing by remember { mutableStateOf<Product?>(null) }
     var imageFor by remember { mutableStateOf<Product?>(null) }
+    var fileFor by remember { mutableStateOf<Product?>(null) }
+    val pickFile = cz.klubpos.ui.components.rememberImagePicker { bytes -> fileFor?.let { repo.setProductImage(it.id, bytes) }; fileFor = null }
     val unlocked = cz.klubpos.ui.owner.rememberOwnerUnlocked()
     var askUnlock by remember { mutableStateOf<Product?>(null) }
     var showIo by remember { mutableStateOf(false) }
@@ -96,19 +99,25 @@ fun ProductsScreen() {
             FloatingActionButton(onClick = { open(Product(name = "", price = 0)) }) { Icon(Icons.Default.Add, "Nová položka") }
         },
     ) { pad ->
-        LazyColumn(Modifier.padding(pad)) {
-            item(key = "draught") { DraughtSection(canEdit = unlocked, onRequestUnlock = { askUnlock = Product(id = -2, name = "", price = 0) }) }
+        // Grid of cards: 1 column on a phone, 2–4 on a tablet.
+        androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+            columns = androidx.compose.foundation.lazy.grid.GridCells.Adaptive(320.dp),
+            modifier = Modifier.padding(pad),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 8.dp, end = 8.dp, bottom = 96.dp),
+        ) {
+            item(key = "draught", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) { DraughtSection(canEdit = unlocked, onRequestUnlock = { askUnlock = Product(id = -2, name = "", price = 0) }) }
             var lastCat: String? = null
             sorted.forEach { p ->
                 if (byType && p.category != lastCat) {
                     lastCat = p.category
-                    item(key = "cat-${p.category}-${p.id}") {
+                    item(key = "cat-${p.category}-${p.id}", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
                         Text(p.category, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp))
                     }
                 }
                 item(key = p.id) {
-                    Row(Modifier.fillMaxWidth().clickable { open(p) }.padding(horizontal = 16.dp, vertical = 8.dp),
+                    Row(Modifier.fillMaxWidth().padding(6.dp).glass(RoundedCornerShape(18.dp)).clickable { open(p) }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         EncryptedImage(p.imageId, p.name, Modifier.size(52.dp).clip(RoundedCornerShape(10.dp)), textSize = 16)
                         Spacer(Modifier.width(12.dp))
@@ -127,14 +136,14 @@ fun ProductsScreen() {
                                 style = MaterialTheme.typography.labelSmall, color = cz.klubpos.ui.theme.KlubColors.Gold)
                         }
                     }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
                 }
             }
         }
     }
 
     editing?.let { p ->
-        ProductDialog(p, onDismiss = { editing = null }, onImage = { imageFor = p; editing = null }) { updated ->
+        ProductDialog(p, onDismiss = { editing = null }, onImage = { imageFor = p; editing = null },
+            onImageFile = { fileFor = p; editing = null; pickFile() }) { updated ->
             scope.launch { repo.saveProduct(updated) }; editing = null
         }
     }
@@ -143,7 +152,7 @@ fun ProductsScreen() {
 }
 
 @Composable
-private fun ProductDialog(p: Product, onDismiss: () -> Unit, onImage: () -> Unit, onSave: (Product) -> Unit) {
+private fun ProductDialog(p: Product, onDismiss: () -> Unit, onImage: () -> Unit, onImageFile: () -> Unit, onSave: (Product) -> Unit) {
     var name by remember { mutableStateOf(p.name) }
     var category by remember { mutableStateOf(p.category) }
     var price by remember { mutableStateOf(if (p.price == 0L) "" else p.price.toString()) }
@@ -279,7 +288,10 @@ private fun ProductDialog(p: Product, onDismiss: () -> Unit, onImage: () -> Unit
                         modifier = Modifier.width(90.dp), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) { Switch(active, { active = it }); Spacer(Modifier.width(8.dp)); Text("Aktivní (nabízet barmanovi)") }
-                if (p.id != 0L) OutlinedButton(onClick = onImage) { Text("Nahrát obrázek přes QR") }
+                if (p.id != 0L) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onImageFile) { Text("Obrázek ze souboru") }
+                    OutlinedButton(onClick = onImage) { Text("Z mobilu (QR)") }
+                }
             }
         },
         confirmButton = {

@@ -102,6 +102,7 @@ fun MemberSettingsSheet(
     var avatar by remember(m0.id) { mutableStateOf(m0.avatar) }
     var qr by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    val pickFile = cz.klubpos.ui.components.rememberImagePicker { bytes -> repo.setMemberPhoto(status.memberId, bytes) }
 
     fun save(extra: (Member) -> Member = { it }) = scope.launch {
         val cur = repo.memberOnce(m0.id) ?: return@launch
@@ -155,8 +156,8 @@ fun MemberSettingsSheet(
             ToggleRow(vip, { vip = it }, "VIP", "zlatý rám, lesk podle náklonu tabletu") {
                 Box(Modifier.size(28.dp).clip(CircleShape).background(androidx.compose.ui.graphics.Brush.linearGradient(GoldMetal)))
             }
-            ToggleRow(elder, { elder = it }, "Elder", "prastarý mystický rám s runami a odznak Cthulhu") {
-                CthulhuIcon(Modifier.size(28.dp))
+            ToggleRow(elder, { elder = it }, "Elder", "platinový rám – nejvyšší hodnost, má přednost před VIP") {
+                Box(Modifier.size(28.dp).clip(CircleShape).background(androidx.compose.ui.graphics.Brush.linearGradient(cz.klubpos.ui.theme.PlatinumMetal)))
             }
 
             // ---- contact ----
@@ -180,7 +181,8 @@ fun MemberSettingsSheet(
             // ---- picture ----
             Text("Obrázek", style = MaterialTheme.typography.labelLarge, color = KlubColors.Muted)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton({ qr = true }) { Text("Nahrát fotku z mobilu (QR)") }
+                OutlinedButton({ pickFile() }) { Text("Vybrat soubor") }
+                OutlinedButton({ qr = true }) { Text("Z mobilu (QR)") }
                 if (m0.photoId != null) TextButton({ scope.launch { repo.removeMemberPhoto(m0.id) } }) { Text("Odebrat fotku", color = KlubColors.OldDebt) }
             }
             Text("…nebo herní avatar" + if (m0.photoId != null) " (zobrazí se po odebrání fotky)" else "",

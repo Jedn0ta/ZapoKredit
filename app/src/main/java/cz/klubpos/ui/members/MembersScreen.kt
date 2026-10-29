@@ -37,7 +37,7 @@ import cz.klubpos.ui.components.reorderItem
 import androidx.compose.foundation.clickable
 import cz.klubpos.ui.theme.glass
 import cz.klubpos.ui.theme.goldFrame
-import cz.klubpos.ui.theme.elderFrame
+import cz.klubpos.ui.theme.platinumFrame
 import cz.klubpos.ui.components.MemberAvatar
 import cz.klubpos.ui.components.CthulhuIcon
 import cz.klubpos.ui.components.tileTint
@@ -228,8 +228,9 @@ private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected:
     val shape = RoundedCornerShape(24.dp)
     Box(
         modifier.fillMaxWidth().aspectRatio(0.82f)
-            .then(if (m.vip) Modifier.goldFrame(shape) else Modifier)
-            .then(if (m.elder) Modifier.elderFrame(shape, inset = if (m.vip) 6.dp else 0.dp) else Modifier)
+            // Elder (platinum) outranks VIP (gold): platinum outside, gold just inside when both
+            .then(if (m.elder) Modifier.platinumFrame(shape) else Modifier)
+            .then(if (m.vip) Modifier.padding(if (m.elder) 5.dp else 0.dp).goldFrame(if (m.elder) RoundedCornerShape(20.dp) else shape) else Modifier)
             .clip(shape)
             .then(when {
                 m.vip || m.elder -> Modifier
@@ -260,10 +261,6 @@ private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected:
         }
         AmountBadge(m, Modifier.align(Alignment.TopEnd).padding(8.dp))
         Column(Modifier.align(Alignment.TopStart).padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (m.elder) Box(Modifier.size(if (compact) 26.dp else 32.dp).clip(CircleShape).glass(CircleShape, alpha = 0.18f)
-                .background(Color(0x991B3A2E)).padding(4.dp), contentAlignment = Alignment.Center) {
-                CthulhuIcon(Modifier.fillMaxSize())
-            }
             if (newbie) Text("NOVÁČEK", Modifier.clip(RoundedCornerShape(8.dp))
                 .background(Brush.linearGradient(listOf(KlubColors.PaidToday, Color(0xFF2BB673)))).padding(horizontal = 7.dp, vertical = 3.dp),
                 color = KlubColors.Ink, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold))

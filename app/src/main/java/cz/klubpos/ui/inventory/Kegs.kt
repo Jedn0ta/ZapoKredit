@@ -58,16 +58,24 @@ fun KegsSection() {
     val all = (groups + active.map { it.kegGroup }).distinct()
     if (all.isEmpty()) return
 
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).tourTarget("kegs"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        all.forEach { g ->
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.padding(horizontal = 6.dp, vertical = 4.dp).tourTarget("kegs")) {
+      val cols = (maxWidth / 360.dp).toInt().coerceIn(1, 4)
+      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+       all.chunked(cols).forEach { rowGroups ->
+        androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        rowGroups.forEach { g ->
             val k = active.firstOrNull { it.kegGroup == g }
             val st = stock.firstOrNull { it.kegGroup == g }
             KegCard(g, k, st,
                 onTap = { tapFor = g }, onOrder = { orderFor = g },
                 onStockDelta = { d -> scope.launch { repo.setKegStock(g, count = (st?.count ?: 0) + d) } },
                 onEditStock = { editStock = g },
-                onFinish = { scope.launch { repo.finishKeg(g) } })
+                onFinish = { scope.launch { repo.finishKeg(g) } }, modifier = Modifier.weight(1f))
         }
+        repeat(cols - rowGroups.size) { Box(Modifier.weight(1f)) }
+        }
+       }
+      }
     }
 
     tapFor?.let { g ->
@@ -91,9 +99,10 @@ fun KegsSection() {
 private fun KegCard(
     group: String, k: KegStatus?, stock: cz.klubpos.data.db.entity.KegStock?,
     onTap: () -> Unit, onOrder: () -> Unit, onStockDelta: (Int) -> Unit, onEditStock: () -> Unit, onFinish: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val df = remember { SimpleDateFormat("EEEE d. M. 'v' HH:mm", Locale("cs", "CZ")) }
-    Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(24.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(modifier.fillMaxWidth().glass(RoundedCornerShape(24.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (k != null) KegGauge(((k.sizeLiters - k.pouredLiters) / k.sizeLiters).toFloat(), Modifier.width(34.dp).height(44.dp).padding(end = 10.dp))
             Text(group, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)

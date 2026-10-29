@@ -143,3 +143,22 @@ fun NumberDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("Zrušit") } },
     )
 }
+
+/**
+ * Standard Android file/gallery picker for an image. Returns a launcher; the picked file's
+ * bytes are handed to [onBytes] (on a background thread is up to the caller – files are small).
+ */
+@Composable
+fun rememberImagePicker(onBytes: suspend (ByteArray) -> Unit): () -> Unit {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) scope.launch {
+            val bytes = withContext(Dispatchers.IO) { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }
+            if (bytes != null) withContext(Dispatchers.IO) { onBytes(bytes) }
+        }
+    }
+    return { launcher.launch("image/*") }
+}

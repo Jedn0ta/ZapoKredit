@@ -1,5 +1,9 @@
 package cz.klubpos.ui.shopping
 
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
+import cz.klubpos.ui.theme.glass
 import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -103,10 +107,11 @@ fun ShoppingScreen() {
                 IconButton({ showAdd = true }) { Icon(Icons.Default.Add, "Přidat") }
             }
             if (items.isEmpty()) Text("Prázdné", Modifier.padding(20.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+            androidx.compose.foundation.lazy.grid.LazyVerticalGrid(androidx.compose.foundation.lazy.grid.GridCells.Adaptive(340.dp),
+                contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 24.dp)) {
                 itemsIndexed(open, key = { _, it -> it.id }) { i, item ->
                     SwipeRow(
-                        modifier = if (i == 0) Modifier.tourTarget("shopping_row") else Modifier,
+                        modifier = Modifier.padding(6.dp).clip(RoundedCornerShape(18.dp)).then(if (i == 0) Modifier.tourTarget("shopping_row") else Modifier),
                         start = SwipeAction(Icons.Default.Check, "Koupeno", KlubColors.PaidToday) {
                             scope.launch { repo.setShoppingDone(item, true, receive = true) }
                         },
@@ -114,9 +119,8 @@ fun ShoppingScreen() {
                             scope.launch { repo.deleteShoppingItem(item.id) }
                         },
                     ) { ItemRow(item, onQty = { qtyFor = item }) }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.surface)
                 }
-                if (done.isNotEmpty()) item {
+                if (done.isNotEmpty()) item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
                     Row(Modifier.fillMaxWidth().padding(20.dp, 20.dp, 8.dp, 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("Koupeno", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -125,7 +129,7 @@ fun ShoppingScreen() {
                 }
                 items(done, key = { it.id }) { item ->
                     // Swipe back if ticked by mistake (stock is not reverted automatically).
-                    SwipeRow(start = SwipeAction(Icons.AutoMirrored.Filled.Undo, "Vrátit", KlubColors.Amber) {
+                    SwipeRow(modifier = Modifier.padding(6.dp).clip(RoundedCornerShape(18.dp)), start = SwipeAction(Icons.AutoMirrored.Filled.Undo, "Vrátit", KlubColors.Amber) {
                         scope.launch { repo.setShoppingDone(item, false, receive = false) }
                     }) { ItemRow(item, onQty = {}) }
                 }
@@ -146,7 +150,7 @@ fun ShoppingScreen() {
 
 @Composable
 private fun ItemRow(item: ShoppingItem, onQty: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp),
+    Row(Modifier.fillMaxWidth().glass(RoundedCornerShape(18.dp)).padding(start = 16.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically) {
         if (item.done) Box(Modifier.size(8.dp).clip(CircleShape).background(KlubColors.PaidToday))
         Text(item.name, Modifier.weight(1f).padding(start = if (item.done) 12.dp else 0.dp, top = 16.dp, bottom = 16.dp),
