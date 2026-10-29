@@ -62,7 +62,8 @@ jobs:
       - name: Report build errors as annotations
         if: failure()
         run: |
-          grep -E "^e: |What went wrong|error:|Could not|Caused by|> " build.log | head -60 | while IFS= read -r l; do echo "::error::$l"; done
+          grep -vE "^> Task|^\s*at " build.log | grep -E "^e: |What went wrong|error|Error|Could not|Caused by|^> [A-Z]" -A2 | head -80 > err.txt || true
+          echo "::error title=Build errors::$(sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g' err.txt)"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
