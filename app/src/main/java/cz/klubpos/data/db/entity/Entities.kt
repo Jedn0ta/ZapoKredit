@@ -30,6 +30,8 @@ data class Member(
     @androidx.room.ColumnInfo(defaultValue = "''") val email: String = "",
     /** Built-in gamer avatar id (used when there is no photo). */
     @androidx.room.ColumnInfo(defaultValue = "NULL") val avatar: String? = null,
+    /** Jedi mode: 0 = off, otherwise 1-based index of the blade colour. */
+    @androidx.room.ColumnInfo(defaultValue = "0") val jedi: Int = 0,
 )
 
 @Entity(tableName = "products")
@@ -66,7 +68,14 @@ data class Product(
     /** Deal "buy X get Y free" (e.g. 3+1). dealBuy = 0 → off. */
     @androidx.room.ColumnInfo(defaultValue = "0") val dealBuy: Int = 0,
     @androidx.room.ColumnInfo(defaultValue = "0") val dealFree: Int = 0,
+    /** What it is: DRAUGHT (z sudu), POURED_ALCO, POURED_SOFT, SPIRIT, OTHER. */
+    @androidx.room.ColumnInfo(defaultValue = "'OTHER'") val kind: String = "OTHER",
+    /** For poured drinks / spirits: bottle size; stock is then counted in bottles. 0 = pieces. */
+    @androidx.room.ColumnInfo(defaultValue = "0") val bottleMl: Int = 0,
 ) {
+    /** Stock change for selling [qty] servings (fraction of a bottle for poured drinks). */
+    fun stockPerServing(): Double = if (bottleMl > 0 && pourMl > 0) pourMl.toDouble() / bottleMl else 1.0
+
     fun saleActive(nowMs: Long = System.currentTimeMillis()): Boolean =
         salePrice != null && (saleFrom == null || nowMs >= saleFrom) && (saleTo == null || nowMs < saleTo) &&
             (saleLeft == null || saleLeft > 0.0)

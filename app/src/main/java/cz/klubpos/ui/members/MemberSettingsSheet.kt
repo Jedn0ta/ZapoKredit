@@ -100,6 +100,7 @@ fun MemberSettingsSheet(
     var vip by remember(m0.id) { mutableStateOf(m0.vip) }
     var elder by remember(m0.id) { mutableStateOf(m0.elder) }
     var avatar by remember(m0.id) { mutableStateOf(m0.avatar) }
+    var jedi by remember(m0.id) { mutableStateOf(m0.jedi) }
     var qr by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     val pickFile = cz.klubpos.ui.components.rememberImagePicker { bytes -> repo.setMemberPhoto(status.memberId, bytes) }
@@ -108,7 +109,7 @@ fun MemberSettingsSheet(
         val cur = repo.memberOnce(m0.id) ?: return@launch
         repo.updateMember(extra(cur.copy(
             name = name.trim().ifBlank { cur.name }, nickname = nick.trim().ifBlank { null }, note = note.trim().ifBlank { null },
-            phone = phone.trim(), email = email.trim(), tileColor = tint, vip = vip, elder = elder, avatar = avatar,
+            phone = phone.trim(), email = email.trim(), tileColor = tint, vip = vip, elder = elder, avatar = avatar, jedi = jedi,
         )))
     }
     fun go(i: Intent) = runCatching { context.startActivity(i) }
@@ -158,6 +159,20 @@ fun MemberSettingsSheet(
             }
             ToggleRow(elder, { elder = it }, "Elder", "platinový rám – nejvyšší hodnost, má přednost před VIP") {
                 Box(Modifier.size(28.dp).clip(CircleShape).background(androidx.compose.ui.graphics.Brush.linearGradient(cz.klubpos.ui.theme.PlatinumMetal)))
+            }
+
+            // ---- Jedi ----
+            ToggleRow(jedi > 0, { jedi = if (it) 1 else 0 }, "Jedi", "zářící rám jako čepel – vyber barvu") {
+                Box(Modifier.size(28.dp).clip(CircleShape).background(cz.klubpos.ui.theme.SaberColors[(jedi - 1).coerceAtLeast(0)]))
+            }
+            if (jedi > 0) Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                cz.klubpos.ui.theme.SaberColors.forEachIndexed { i, c ->
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(Modifier.size(40.dp).clip(CircleShape).background(c)
+                            .border(if (jedi == i + 1) 3.dp else 0.dp, Color.White, CircleShape).clickable { jedi = i + 1 })
+                        Text(cz.klubpos.ui.theme.SaberNames[i], style = MaterialTheme.typography.labelSmall, color = KlubColors.Muted)
+                    }
+                }
             }
 
             // ---- contact ----

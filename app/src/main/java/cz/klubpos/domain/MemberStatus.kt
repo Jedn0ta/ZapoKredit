@@ -45,6 +45,7 @@ data class MemberStatus(
     val tileColor: Int = -1,
     val elder: Boolean = false,
     val avatar: String? = null,
+    val jedi: Int = 0,
 ) {
     /** Newcomer = joined less than [days] days ago. */
     fun isNewbie(days: Int, now: Long = System.currentTimeMillis()) = days > 0 && now - createdAt < days * 86_400_000L
@@ -91,6 +92,7 @@ data class MemberStatus(
                 tileColor = r.tileColor,
                 elder = r.elder,
                 avatar = r.avatar,
+                jedi = r.jedi,
                 createdAt = r.createdAt,
             )
         }

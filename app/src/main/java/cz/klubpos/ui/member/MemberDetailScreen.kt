@@ -86,6 +86,7 @@ import cz.klubpos.data.db.entity.EntryType
 import cz.klubpos.data.db.entity.LedgerEntry
 import cz.klubpos.data.db.entity.Product
 import cz.klubpos.data.repo.ClubRepository
+import cz.klubpos.domain.displayName
 import androidx.compose.runtime.mutableStateListOf
 import cz.klubpos.domain.BusinessDay
 import cz.klubpos.domain.Credits
@@ -187,12 +188,12 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
         val unit = price ?: p?.currentPrice() ?: 0
         val i = cart.indexOfFirst { it.product?.id == p?.id && p != null && it.unitPrice == unit }
         if (i >= 0) cart[i] = cart[i].copy(qty = cart[i].qty + qty)
-        else cart += CartLine(p, desc ?: p?.name ?: "Vlastní položka", unit, qty)
+        else cart += CartLine(p, desc ?: p?.displayName ?: "Vlastní položka", unit, qty)
     }
     /** Set the exact count of a product in the order (0 = remove it). Price always comes from Položky. */
     fun setQty(p: Product, q: Int) {
         cart.removeAll { it.product?.id == p.id }
-        if (q > 0) cart += CartLine(p, p.name, p.currentPrice(), q.toDouble())
+        if (q > 0) cart += CartLine(p, p.displayName, p.currentPrice(), q.toDouble())
     }
     fun removeOne(l: CartLine) {
         val i = cart.indexOf(l); if (i < 0) return
@@ -468,7 +469,7 @@ private fun ProductKey(p: Product, count: Double, promo: Boolean = false, modifi
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)))
         }
         Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.SpaceBetween) {
-            Text(p.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, lineHeight = 18.sp, maxLines = 3,
+            Text(p.displayName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, lineHeight = 18.sp, maxLines = 3,
                 overflow = TextOverflow.Ellipsis, color = Color.White, modifier = Modifier.padding(top = 4.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
                 if (promo) Row(verticalAlignment = Alignment.Bottom) {

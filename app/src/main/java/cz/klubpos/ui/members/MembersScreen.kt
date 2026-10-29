@@ -32,12 +32,16 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Groups
 import cz.klubpos.ui.components.categoryColor
 import cz.klubpos.ui.tour.tourTarget
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
 import cz.klubpos.ui.components.reorderableGrid
 import cz.klubpos.ui.components.reorderItem
 import androidx.compose.foundation.clickable
 import cz.klubpos.ui.theme.glass
 import cz.klubpos.ui.theme.goldFrame
 import cz.klubpos.ui.theme.platinumFrame
+import cz.klubpos.ui.theme.saberFrame
+import cz.klubpos.ui.theme.SaberColors
 import cz.klubpos.ui.components.MemberAvatar
 import cz.klubpos.ui.components.CthulhuIcon
 import cz.klubpos.ui.components.tileTint
@@ -99,7 +103,7 @@ import cz.klubpos.ui.theme.KlubColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private enum class Filter(val label: String) { ALL("Vše"), IN_CLUB("V klubu"), DEBT("Dluh") }
+private enum class Filter(val label: String) { ALL("Vše"), IN_CLUB("In The House"), DEBT("Dluh") }
 
 /**
  * Main POS screen: grid of members.
@@ -132,6 +136,10 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
     val paged = filter == Filter.ALL && query.isBlank()
     val pager = androidx.compose.foundation.pager.rememberPagerState { pages.size }
     var moveFor by remember { mutableStateOf<MemberStatus?>(null) }
+    // Drag a tile onto a card tab to move the member there
+    val tabRects = remember { androidx.compose.runtime.mutableStateMapOf<Int, androidx.compose.ui.geometry.Rect>() }
+    var dragPointer by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
+    val hoverTab = dragPointer?.let { p -> tabRects.entries.firstOrNull { it.value.contains(p) }?.key }
 
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         // Minimal header: search + segmented filter
@@ -147,7 +155,9 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
         Box(Modifier.weight(1f)) {
             if (paged) {
                 Column(Modifier.fillMaxSize()) {
-                    if (pages.size > 1) PageTabs(pages, pager.currentPage) { i -> scope.launch { pager.animateScrollToPage(i) } }
+                    if (pages.size > 1) PageTabs(pages, pager.currentPage, hoverTab, onRect = { i, r -> tabRects[i] = r }) { i ->
+                        scope.launch { pager.animateScrollToPage(i) }
+                    }
                     androidx.compose.foundation.pager.HorizontalPager(pager, Modifier.fillMaxSize(), key = { it }) { page ->
                         MemberGrid(
                             members = members.filter { it.page.coerceIn(0, pages.lastIndex) == page },
@@ -155,6 +165,13 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
                             tourFirst = page == 0,
                             onOpen = onOpenMember, onActions = { actionsFor = it },
                             onSaveOrder = { ids -> scope.launch { repo.saveMemberOrder(ids) } },
+                            onDragPointer = { dragPointer = it },
+                            onDropAt = { id, pos ->
+                                val target = tabRects.entries.firstOrNull { it.value.contains(pos) }?.key
+                                if (target != null && target != page) {
+                                    scope.launch { repo.setMemberPage(id, target); pager.animateScrollToPage(target) }; true
+                                } else false
+                            },
                         )
                     }
                 }
@@ -231,9 +248,12 @@ private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected:
             // Elder (platinum) outranks VIP (gold): platinum outside, gold just inside when both
             .then(if (m.elder) Modifier.platinumFrame(shape) else Modifier)
             .then(if (m.vip) Modifier.padding(if (m.elder) 5.dp else 0.dp).goldFrame(if (m.elder) RoundedCornerShape(20.dp) else shape) else Modifier)
+            // Jedi blade sits innermost when combined with the metal frames
+            .then(if (m.jedi > 0) Modifier.padding(if (m.elder || m.vip) 5.dp else 0.dp)
+                .saberFrame(if (m.elder || m.vip) RoundedCornerShape(18.dp) else shape, SaberColors[(m.jedi - 1).coerceIn(0, SaberColors.lastIndex)]) else Modifier)
             .clip(shape)
             .then(when {
-                m.vip || m.elder -> Modifier
+                m.vip || m.elder || m.jedi > 0 -> Modifier
                 selected -> Modifier.border(BorderStroke(4.dp, KlubColors.Amber), shape)
                 m.inClub -> Modifier.border(BorderStroke(2.5.dp, Brush.linearGradient(listOf(KlubColors.InClub, KlubColors.Violet))), shape)
                 tileTint(m.tileColor) != null -> Modifier.border(1.5.dp, tileTint(m.tileColor)!!.copy(alpha = 0.7f), shape)
@@ -253,7 +273,7 @@ private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected:
                         style = (if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.headlineSmall)
                             .copy(fontWeight = FontWeight.Bold),
                         maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    if (m.inClub) Text("v klubu", color = KlubColors.InClub, style = MaterialTheme.typography.labelMedium)
+                    if (m.inClub) Text("In The House", color = KlubColors.InClub, style = MaterialTheme.typography.labelMedium)
                 }
             }
             if (!m.inClub) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)))
@@ -273,7 +293,7 @@ private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected:
                 Text(m.nickname ?: m.name, color = Color.White,
                     style = if (compact) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (m.inClub) Text("v klubu", color = KlubColors.InClub, style = MaterialTheme.typography.labelSmall)
+                if (m.inClub) Text("In The House", color = KlubColors.InClub, style = MaterialTheme.typography.labelSmall)
             }
         }
         }
@@ -386,12 +406,16 @@ private fun AddMemberDialog(onDismiss: () -> Unit, onAdd: (String, String?) -> U
 
 /** Card tabs above the member grid (also swipeable). */
 @Composable
-private fun PageTabs(pages: List<String>, current: Int, onSelect: (Int) -> Unit) {
+private fun PageTabs(pages: List<String>, current: Int, hover: Int?, onRect: (Int, androidx.compose.ui.geometry.Rect) -> Unit, onSelect: (Int) -> Unit) {
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp)
         .tourTarget("member_pages"), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         pages.forEachIndexed { i, name ->
             val sel = i == current
-            Box(Modifier.height(40.dp).clip(RoundedCornerShape(14.dp))
+            val drop = hover == i && i != current
+            Box(Modifier.height(40.dp)
+                .onGloballyPositioned { onRect(i, it.boundsInRoot()) }
+                .then(if (drop) Modifier.border(2.dp, KlubColors.InClub, RoundedCornerShape(14.dp)) else Modifier)
+                .clip(RoundedCornerShape(14.dp))
                 .then(if (sel) Modifier.background(KlubColors.GoldBrush) else Modifier.glass(RoundedCornerShape(14.dp)))
                 .clickable { onSelect(i) }.padding(horizontal = 18.dp), contentAlignment = Alignment.Center) {
                 Text(name, color = if (sel) KlubColors.Ink else MaterialTheme.colorScheme.onSurface,
@@ -406,11 +430,14 @@ private fun PageTabs(pages: List<String>, current: Int, onSelect: (Int) -> Unit)
 private fun MemberGrid(
     members: List<MemberStatus>, tileDp: Int, newbieDays: Int, canReorder: Boolean, tourFirst: Boolean,
     onOpen: (Long) -> Unit, onActions: (MemberStatus) -> Unit, onSaveOrder: (List<Long>) -> Unit,
+    onDragPointer: (androidx.compose.ui.geometry.Offset?) -> Unit = {},
+    onDropAt: ((Long, androidx.compose.ui.geometry.Offset) -> Boolean)? = null,
 ) {
     val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
     val reorder = cz.klubpos.ui.components.rememberGridReorderState(gridState)
     val local = remember { androidx.compose.runtime.mutableStateListOf<MemberStatus>() }
     LaunchedEffect(members) { if (reorder.draggingKey == null) { local.clear(); local.addAll(members) } }
+    LaunchedEffect(reorder) { androidx.compose.runtime.snapshotFlow { reorder.pointer }.collect { onDragPointer(it) } }
     val gap = (tileDp / 11).coerceIn(8, 14).dp
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
     // Tablet (wide): horizontal tiles – picture left, big name in the middle
@@ -424,7 +451,8 @@ private fun MemberGrid(
                 if (a >= 0 && b >= 0) local.add(b, local.removeAt(a))
             },
             onDrop = { onSaveOrder(local.map { it.memberId }) },
-            onLongPress = { key -> local.firstOrNull { it.memberId == key }?.let(onActions) }),
+            onLongPress = { key -> local.firstOrNull { it.memberId == key }?.let(onActions) },
+            onDropAt = onDropAt?.let { f -> { key, pos -> f(key as Long, pos) } }),
         columns = GridCells.Adaptive(if (horizontal) (tileDp * 2).dp else tileDp.dp),
         contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
         horizontalArrangement = Arrangement.spacedBy(gap),

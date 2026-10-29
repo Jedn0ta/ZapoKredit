@@ -16,6 +16,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.toOffset
 import androidx.compose.ui.unit.toSize
@@ -32,6 +34,9 @@ class GridReorderState(val grid: LazyGridState) {
     var draggingKey by mutableStateOf<Any?>(null); internal set
     var offset by mutableStateOf(Offset.Zero); internal set
     internal var moved = false
+    /** Finger position in root coordinates while dragging (to drop on targets outside the grid). */
+    var pointer by mutableStateOf<Offset?>(null); internal set
+    internal var origin = Offset.Zero
 }
 
 @Composable
@@ -48,13 +53,15 @@ fun Modifier.reorderableGrid(
     onMove: (fromKey: Any, toKey: Any) -> Unit,
     onDrop: () -> Unit,
     onLongPress: (key: Any) -> Unit,
+    onDropAt: ((key: Any, rootPos: Offset) -> Boolean)? = null,
 ): Modifier = composed {
     val haptic = LocalHapticFeedback.current
     val move by rememberUpdatedState(onMove)
     val drop by rememberUpdatedState(onDrop)
     val press by rememberUpdatedState(onLongPress)
     val can by rememberUpdatedState(canDrag)
-    pointerInput(state) {
+    val dropAt by rememberUpdatedState(onDropAt)
+    onGloballyPositioned { state.origin = it.positionInRoot() }.pointerInput(state) {
         val slop = viewConfiguration.touchSlop * 2
         detectDragGesturesAfterLongPress(
             onDragStart = { p ->
@@ -62,11 +69,13 @@ fun Modifier.reorderableGrid(
                 if (!can(item.key)) { press(item.key); return@detectDragGesturesAfterLongPress }
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 state.draggingKey = item.key; state.offset = Offset.Zero; state.moved = false
+                state.pointer = state.origin + p
             },
             onDrag = { change, amount ->
                 val key = state.draggingKey ?: return@detectDragGesturesAfterLongPress
                 change.consume()
                 state.offset += amount
+                state.pointer = state.pointer?.plus(amount)
                 if (state.offset.getDistance() > slop) state.moved = true
                 val cur = state.grid.layoutInfo.visibleItemsInfo.firstOrNull { it.key == key } ?: return@detectDragGesturesAfterLongPress
                 val center = cur.offset.toOffset() + state.offset + Offset(cur.size.width / 2f, cur.size.height / 2f)
@@ -80,10 +89,14 @@ fun Modifier.reorderableGrid(
             },
             onDragEnd = {
                 val key = state.draggingKey
-                if (key != null) { if (state.moved) drop() else press(key) }
-                state.draggingKey = null; state.offset = Offset.Zero
+                val ptr = state.pointer
+                if (key != null) {
+                    val handled = state.moved && ptr != null && dropAt?.invoke(key, ptr) == true
+                    if (!handled) { if (state.moved) drop() else press(key) }
+                }
+                state.draggingKey = null; state.offset = Offset.Zero; state.pointer = null
             },
-            onDragCancel = { state.draggingKey = null; state.offset = Offset.Zero },
+            onDragCancel = { state.draggingKey = null; state.offset = Offset.Zero; state.pointer = null },
         )
     }
 }

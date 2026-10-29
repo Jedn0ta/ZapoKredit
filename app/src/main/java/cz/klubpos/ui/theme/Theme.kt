@@ -231,3 +231,27 @@ fun Modifier.platinumFrame(shape: Shape, width: Dp = 5.dp): Modifier = composed 
             drawOutline(outline = outline, color = Color(0x99FFFFFF), style = Stroke(width = px * 0.3f))
         }
 }
+
+/** Jedi blade colours (index = Member.jedi - 1). */
+val SaberColors = listOf(Color(0xFF3FA9FF), Color(0xFF39FF6A), Color(0xFFB04DFF), Color(0xFFFFD84D))
+val SaberNames = listOf("modrá", "zelená", "fialová", "žlutá")
+
+/**
+ * Jedi frame: a glowing energy blade around the tile – white-hot core, coloured glow.
+ * Static (no flicker); the glow gets a touch brighter as the device tilts.
+ */
+fun Modifier.saberFrame(shape: Shape, color: Color, width: Dp = 3.dp): Modifier = composed {
+    val tilt = cz.klubpos.ui.components.LocalTilt.current
+    this
+        .shadow(26.dp, shape, ambientColor = color, spotColor = color)
+        .drawWithContent {
+            drawContent()
+            val px: Float = width.toPx()
+            val boost: Float = (0.75f + (kotlin.math.abs(tilt.x) + kotlin.math.abs(tilt.y)) * 0.25f).coerceIn(0.75f, 1f)
+            val outline = shape.createOutline(size, layoutDirection, this)
+            drawOutline(outline = outline, color = color.copy(alpha = 0.18f * boost), style = Stroke(width = px * 7f))
+            drawOutline(outline = outline, color = color.copy(alpha = 0.45f * boost), style = Stroke(width = px * 3.5f))
+            drawOutline(outline = outline, color = color, style = Stroke(width = px * 1.8f))
+            drawOutline(outline = outline, color = Color.White.copy(alpha = 0.95f), style = Stroke(width = px * 0.8f))
+        }
+}

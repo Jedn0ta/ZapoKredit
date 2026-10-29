@@ -1,6 +1,8 @@
 package cz.klubpos.ui.products
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -47,8 +49,17 @@ fun DraughtSection(canEdit: Boolean, onRequestUnlock: () -> Unit) {
 
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).glass(RoundedCornerShape(22.dp)).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("🍺 Pivo ze sudu", style = MaterialTheme.typography.titleMedium)
-        if (groups.isEmpty()) Text("Žádné pivo ze sudu. Přidej ho a na Home se objeví ukazatel sudu.",
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("🍺  Čepované", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            // keg with a plus = add a beer on tap
+            androidx.compose.foundation.layout.Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).clickable { if (canEdit) adding = true else onRequestUnlock() },
+                contentAlignment = Alignment.Center) {
+                KegGauge(1f, Modifier.size(24.dp, 30.dp))
+                Text("+", Modifier.align(Alignment.TopEnd), color = KlubColors.Gold, fontWeight = FontWeight.ExtraBold,
+                    style = MaterialTheme.typography.titleMedium)
+            }
+        }
+        if (groups.isEmpty()) Text("Žádné čepované pivo. Přidej ho ikonou sudu s plusem.",
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         groups.forEach { g ->
             val k = active.firstOrNull { it.kegGroup == g }
@@ -64,8 +75,7 @@ fun DraughtSection(canEdit: Boolean, onRequestUnlock: () -> Unit) {
                 TextButton({ if (canEdit) removing = g else onRequestUnlock() }) { Text("Odebrat", color = KlubColors.OldDebt) }
             }
         }
-        OutlinedButton({ if (canEdit) adding = true else onRequestUnlock() }) { Text("+ Přidat pivo ze sudu") }
-        Text("Nový sud narazíš ve Skladu.", style = MaterialTheme.typography.bodySmall, color = KlubColors.Muted)
+        Text("Nový sud narazíš ve Skladu. Položky čepovaného (velké / malé) jsou níže.", style = MaterialTheme.typography.bodySmall, color = KlubColors.Muted)
     }
 
     if (adding) AddDraughtDialog(onDismiss = { adding = false }) { name, size, big, small ->

@@ -1,6 +1,8 @@
 package cz.klubpos.ui.products
 
 import cz.klubpos.ui.theme.glass
+import cz.klubpos.domain.kindEnum
+import cz.klubpos.domain.displayName
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -13,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -105,16 +108,31 @@ fun ProductsScreen() {
             modifier = Modifier.padding(pad),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 8.dp, end = 8.dp, bottom = 96.dp),
         ) {
-            item(key = "draught", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) { DraughtSection(canEdit = unlocked, onRequestUnlock = { askUnlock = Product(id = -2, name = "", price = 0) }) }
-            var lastCat: String? = null
-            sorted.forEach { p ->
-                if (byType && p.category != lastCat) {
-                    lastCat = p.category
-                    item(key = "cat-${p.category}-${p.id}", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-                        Text(p.category, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp))
+            val full: androidx.compose.foundation.lazy.grid.LazyGridItemSpanScope.() -> androidx.compose.foundation.lazy.grid.GridItemSpan = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }
+            item(key = "draught", span = full) {
+                DraughtSection(canEdit = unlocked, onRequestUnlock = { askUnlock = Product(id = -2, name = "", price = 0) })
+            }
+            // Sections: Čepované → Rozlévané alko → Rozlévané nealko → Lihoviny → Ostatní
+            val groups: List<Pair<cz.klubpos.domain.Kind?, List<Product>>> =
+                if (byType) cz.klubpos.domain.Kind.entries.map { k -> k to sorted.filter { p -> p.kindEnum == k } }
+                    .filter { (k, l) -> l.isNotEmpty() || k != cz.klubpos.domain.Kind.DRAUGHT }
+                else listOf(null to sorted)
+            groups.forEach { (k, list) ->
+                if (k != null && k != cz.klubpos.domain.Kind.DRAUGHT) item(key = "kind-${k.code}", span = full) {
+                    Row(Modifier.fillMaxWidth().padding(start = 12.dp, top = 18.dp, end = 4.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("${k.emoji}  ${k.label}", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary)
+                        IconButton({ open(Product(name = "", price = 0, kind = k.code, category = k.label,
+                            pourMl = k.volumes.firstOrNull() ?: 0, trackStock = k == cz.klubpos.domain.Kind.OTHER)) }) {
+                            Icon(Icons.Default.Add, "Přidat – ${k.label}", tint = MaterialTheme.colorScheme.primary)
+                        }
                     }
                 }
+                if (k != null && list.isEmpty()) item(key = "empty-${k.code}", span = full) {
+                    Text("Zatím nic – přidej plusem.", Modifier.padding(start = 16.dp, bottom = 6.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                }
+              list.forEach { p ->
                 item(key = p.id) {
                     Row(Modifier.fillMaxWidth().padding(6.dp).glass(RoundedCornerShape(18.dp)).clickable { open(p) }
                         .padding(horizontal = 12.dp, vertical = 10.dp),
@@ -122,8 +140,12 @@ fun ProductsScreen() {
                         EncryptedImage(p.imageId, p.name, Modifier.size(52.dp).clip(RoundedCornerShape(10.dp)), textSize = 16)
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(p.name + if (!p.active) " (skryto)" else "", fontWeight = FontWeight.SemiBold)
-                            Text(if (p.trackStock) "sklad ${fmtQty(p.stockQty)} ${p.unit} · min ${fmtQty(p.minStock)}" else "bez skladové evidence",
+                            Text(p.displayName + if (!p.active) " (skryto)" else "", fontWeight = FontWeight.SemiBold)
+                            Text(when {
+                                p.kegGroup != null -> "ze sudu ${p.kegGroup}"
+                                p.trackStock -> "sklad ${fmtQty(p.stockQty)} ${p.unit}" + (if (p.bottleMl > 0) " (${cz.klubpos.domain.volumeLabel(p.bottleMl)})" else "") + " · min ${fmtQty(p.minStock)}"
+                                else -> "bez skladové evidence"
+                            },
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Column(horizontalAlignment = Alignment.End) {
@@ -137,6 +159,7 @@ fun ProductsScreen() {
                         }
                     }
                 }
+              }
             }
         }
     }
@@ -163,9 +186,12 @@ private fun ProductDialog(p: Product, onDismiss: () -> Unit, onImage: () -> Unit
     var active by remember { mutableStateOf(p.active) }
     val num = KeyboardOptions(keyboardType = KeyboardType.Decimal)
     fun d(s: String) = s.replace(',', '.').toDoubleOrNull() ?: 0.0
-    var draught by remember { mutableStateOf(p.kegGroup != null) }
+    var kind by remember { mutableStateOf(if (p.kegGroup != null) cz.klubpos.domain.Kind.DRAUGHT else cz.klubpos.domain.Kind.of(p.kind)) }
+    val draught = kind == cz.klubpos.domain.Kind.DRAUGHT
+    val poured = kind == cz.klubpos.domain.Kind.POURED_ALCO || kind == cz.klubpos.domain.Kind.POURED_SOFT || kind == cz.klubpos.domain.Kind.SPIRIT
+    var bottleMl by remember { mutableStateOf(if (p.bottleMl > 0) p.bottleMl.toString() else "") }
     var kegGroup by remember { mutableStateOf(p.kegGroup ?: p.name.substringBefore(" velk").substringBefore(" mal")) }
-    var pourMl by remember { mutableStateOf(if (p.pourMl > 0) p.pourMl.toString() else "500") }
+    var pourMl by remember { mutableStateOf(if (p.pourMl > 0) p.pourMl.toString() else (kind.volumes.firstOrNull()?.toString() ?: "")) }
     var promoOn by remember { mutableStateOf(p.promoPrice != null) }
     var promoPrice by remember { mutableStateOf(p.promoPrice?.toString() ?: "") }
     var promoDays by remember { mutableStateOf(p.promoDays) }
@@ -201,27 +227,52 @@ private fun ProductDialog(p: Product, onDismiss: () -> Unit, onImage: () -> Unit
         title = { Text(if (p.id == 0L) "Nová položka" else "Upravit položku") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(name, { name = it }, label = { Text("Název") }, singleLine = true)
-                OutlinedTextField(category, { category = it }, label = { Text("Kategorie") }, singleLine = true)
-                OutlinedTextField(price, { price = it.filter(Char::isDigit) }, label = { Text("Cena (${cz.klubpos.domain.Credits.SYMBOL})") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Switch(draught, { draught = it; if (it) track = false }); Spacer(Modifier.width(8.dp)); Text("Čepuje se ze sudu")
+                // ---- What it is ----
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    cz.klubpos.domain.Kind.entries.forEach { k ->
+                        androidx.compose.material3.FilterChip(kind == k, {
+                            kind = k
+                            if (pourMl.isBlank() || pourMl.toIntOrNull() !in k.volumes) pourMl = k.volumes.firstOrNull()?.toString() ?: ""
+                            if (k == cz.klubpos.domain.Kind.DRAUGHT) track = false
+                            if (category.isBlank() || cz.klubpos.domain.Kind.entries.any { it.label == category }) category = k.label
+                        }, label = { Text("${k.emoji} ${k.label}") })
+                    }
                 }
-                if (draught) {
-                    OutlinedTextField(kegGroup, { kegGroup = it }, label = { Text("Sud (stejný název = stejný sud)") }, singleLine = true,
-                        supportingText = { Text("Např. velké i malé 12° mají sud „Pivo 12°“") })
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        listOf("500", "400", "300").forEach { v ->
-                            androidx.compose.material3.FilterChip(pourMl == v, { pourMl = v }, label = { Text("${v.toInt() / 1000.0} l".replace('.', ',')) })
+                OutlinedTextField(name, { name = it }, label = { Text(if (draught) "Název (např. Plzeň 12° velké)" else "Název") }, singleLine = true)
+                if (draught) OutlinedTextField(kegGroup, { kegGroup = it }, label = { Text("Sud (stejný název = stejný sud)") }, singleLine = true,
+                    supportingText = { Text("Velké i malé 12° mají sud „Pivo 12°“") })
+                // ---- offered volume + its price ----
+                if (kind.volumes.isNotEmpty()) {
+                    Text("Nabízený objem", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        kind.volumes.forEach { v ->
+                            androidx.compose.material3.FilterChip(pourMl == v.toString(), { pourMl = v.toString() }, label = { Text(cz.klubpos.domain.volumeLabel(v)) })
                         }
-                        OutlinedTextField(pourMl, { pourMl = it.filter(Char::isDigit) }, label = { Text("ml") }, singleLine = true,
+                        OutlinedTextField(pourMl, { pourMl = it.filter(Char::isDigit).take(4) }, label = { Text("ml") }, singleLine = true,
                             modifier = Modifier.width(90.dp), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                     }
                 }
+                OutlinedTextField(price, { price = it.filter(Char::isDigit) }, singleLine = true,
+                    label = { Text("Cena" + (pourMl.toIntOrNull()?.takeIf { kind.volumes.isNotEmpty() && it > 0 }?.let { " za ${cz.klubpos.domain.volumeLabel(it)}" } ?: "") +
+                        " (${cz.klubpos.domain.Credits.SYMBOL})") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                OutlinedTextField(category, { category = it }, label = { Text("Kategorie (barva tlačítka)") }, singleLine = true)
                 if (!draught) Row(verticalAlignment = Alignment.CenterVertically) { Switch(track, { track = it }); Spacer(Modifier.width(8.dp)); Text("Sledovat sklad") }
                 if (track && !draught) {
-                    OutlinedTextField(unit, { unit = it }, label = { Text("Jednotka (ks, l, kg…)") }, singleLine = true)
+                    if (poured) {
+                        Text("Velikost lahve – sklad se pak počítá v lahvích", style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            listOf(500, 700, 750, 1000).forEach { b ->
+                                androidx.compose.material3.FilterChip(bottleMl == b.toString(), { bottleMl = b.toString(); unit = "lahev" }, label = { Text(cz.klubpos.domain.volumeLabel(b)) })
+                            }
+                            OutlinedTextField(bottleMl, { bottleMl = it.filter(Char::isDigit).take(5) }, label = { Text("ml") }, singleLine = true,
+                                modifier = Modifier.width(90.dp), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                        }
+                        val per = (bottleMl.toIntOrNull() ?: 0).let { b -> if (b > 0 && (pourMl.toIntOrNull() ?: 0) > 0) b / pourMl.toInt() else 0 }
+                        if (per > 0) Text("≈ $per porcí z lahve", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    OutlinedTextField(unit, { unit = it }, label = { Text("Jednotka (ks, lahev, kg…)") }, singleLine = true)
                     OutlinedTextField(min, { min = it }, label = { Text("Minimální stav (pod ním → nákup)") }, singleLine = true, keyboardOptions = num)
                     OutlinedTextField(reorder, { reorder = it }, label = { Text("Obvykle nakupuji (0 = automaticky)") }, singleLine = true, keyboardOptions = num)
                 }
@@ -296,10 +347,11 @@ private fun ProductDialog(p: Product, onDismiss: () -> Unit, onImage: () -> Unit
         },
         confirmButton = {
             TextButton(enabled = name.isNotBlank() && price.toLongOrNull() != null && (!draught || kegGroup.isNotBlank()) && promoValid, onClick = {
-                onSave(p.copy(name = name.trim(), category = category.trim().ifBlank { "Ostatní" }, price = price.toLong(),
+                onSave(p.copy(name = name.trim(), category = category.trim().ifBlank { kind.label }, price = price.toLong(),
+                    kind = kind.code, bottleMl = if (poured && track) bottleMl.toIntOrNull() ?: 0 else 0,
                     trackStock = track && !draught, unit = unit.ifBlank { "ks" }, minStock = d(min), reorderQty = d(reorder), active = active,
                     kegGroup = if (draught) kegGroup.trim().ifBlank { null } else null,
-                    pourMl = if (draught) pourMl.toIntOrNull() ?: 500 else 0,
+                    pourMl = if (kind.volumes.isNotEmpty()) pourMl.toIntOrNull() ?: 0 else 0,
                     promoPrice = if (promoOn) promoPrice.toLongOrNull() else null,
                     promoDays = promoDays, promoFrom = parseTime(promoFrom) ?: p.promoFrom, promoTo = parseTime(promoTo) ?: p.promoTo,
                     salePrice = if (saleOn) salePrice.toLongOrNull() else null,

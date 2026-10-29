@@ -25,6 +25,7 @@ data class MemberSummaryRow(
     val tileColor: Int,
     val elder: Boolean,
     val avatar: String?,
+    val jedi: Int,
     val createdAt: Long,
     val name: String,
     val nickname: String?,
@@ -51,7 +52,7 @@ interface MemberDao {
 
     @Query(
         """
-        SELECT m.id, m.sortOrder, m.vip, m.page, m.tileColor, m.elder, m.avatar, m.createdAt, m.name, m.nickname, m.photoId,
+        SELECT m.id, m.sortOrder, m.vip, m.page, m.tileColor, m.elder, m.avatar, m.jedi, m.createdAt, m.name, m.nickname, m.photoId,
           COALESCE((SELECT SUM(amount) FROM ledger l WHERE l.memberId = m.id), 0) AS balance,
           COALESCE((SELECT SUM(amount) FROM ledger l WHERE l.memberId = m.id
                     AND l.type != 'PAYMENT' AND l.createdAt >= :dayStart), 0) AS chargesToday,

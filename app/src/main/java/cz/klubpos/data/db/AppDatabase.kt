@@ -31,7 +31,7 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 @Database(
     entities = [Member::class, Product::class, Visit::class, LedgerEntry::class,
         StockMovement::class, ShoppingItem::class, Bartender::class, Keg::class, Supplier::class, KegStock::class],
-    version = 11,
+    version = 12,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -136,13 +136,23 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE members ADD COLUMN jedi INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE products ADD COLUMN kind TEXT NOT NULL DEFAULT 'OTHER'")
+                db.execSQL("ALTER TABLE products ADD COLUMN bottleMl INTEGER NOT NULL DEFAULT 0")
+                // existing draught items
+                db.execSQL("UPDATE products SET kind = 'DRAUGHT' WHERE kegGroup IS NOT NULL")
+            }
+        }
+
         /** Whole DB file is encrypted with SQLCipher (AES-256); key comes from the Android Keystore. */
         fun create(context: Context): AppDatabase {
             System.loadLibrary("sqlcipher")
             val factory = SupportOpenHelperFactory(DatabaseKeyManager.getOrCreatePassphrase(context))
             return Room.databaseBuilder(context, AppDatabase::class.java, "klubpos.db")
                 .openHelperFactory(factory)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
                 // Before first production release replace with real migrations.
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()

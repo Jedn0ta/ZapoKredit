@@ -131,14 +131,15 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
             val visitId = openVisit(memberId)
             val entryId = insertEntry(
                 LedgerEntry(
-                    memberId = memberId, type = EntryType.CHARGE, description = p.name,
+                    memberId = memberId, type = EntryType.CHARGE, description = p.displayNameForLedger(),
                     productId = p.id, quantity = qty, unitPrice = unit,
                     amount = Math.round(unit * qty), visitId = visitId,
                 )
             )
             if (p.trackStock) {
-                db.products().adjustStock(p.id, -qty)
-                db.stock().insert(StockMovement(productId = p.id, delta = -qty, reason = "SALE", ledgerEntryId = entryId))
+                val d = qty * p.stockPerServing()
+                db.products().adjustStock(p.id, -d)
+                db.stock().insert(StockMovement(productId = p.id, delta = -d, reason = "SALE", ledgerEntryId = entryId))
                 suggestIfLow(p.id)
             }
             entryId
@@ -241,9 +242,11 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
             )
         )
         val pid = e.productId
-        if (pid != null && db.products().get(pid)?.trackStock == true) {
-            db.products().adjustStock(pid, e.quantity)
-            db.stock().insert(StockMovement(productId = pid, delta = e.quantity, reason = "VOID", ledgerEntryId = e.id))
+        val vp = pid?.let { db.products().get(it) }
+        if (pid != null && vp?.trackStock == true) {
+            val d = e.quantity * vp.stockPerServing()
+            db.products().adjustStock(pid, d)
+            db.stock().insert(StockMovement(productId = pid, delta = d, reason = "VOID", ledgerEntryId = e.id))
         }
     }
 
@@ -374,8 +377,8 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
     /** New draught beer: creates the big (0,5) and optional small (0,3) items + cellar record. */
     suspend fun addDraughtBeer(name: String, sizeLiters: Double, bigPrice: Long, smallPrice: Long?) = db.withTransaction {
         val g = name.trim()
-        db.products().insert(Product(name = "$g velké", category = "Pivo", price = bigPrice, trackStock = false, kegGroup = g, pourMl = 500))
-        if (smallPrice != null) db.products().insert(Product(name = "$g malé", category = "Pivo", price = smallPrice, trackStock = false, kegGroup = g, pourMl = 300))
+        db.products().insert(Product(name = "$g velké", category = "Čepované", price = bigPrice, trackStock = false, kegGroup = g, pourMl = 500, kind = "DRAUGHT"))
+        if (smallPrice != null) db.products().insert(Product(name = "$g malé", category = "Čepované", price = smallPrice, trackStock = false, kegGroup = g, pourMl = 300, kind = "DRAUGHT"))
         db.kegs().upsertStock(cz.klubpos.data.db.entity.KegStock(g, count = 0, minCount = 1, sizeLiters = sizeLiters))
     }
 
@@ -432,12 +435,13 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
     suspend fun seedIfEmpty() {
         if (db.members().count() > 0) return
         listOf(
-            Product(name = "Pivo 12° velké", category = "Pivo", price = 55, trackStock = false, kegGroup = "Pivo 12°", pourMl = 500),
-            Product(name = "Pivo 12° malé", category = "Pivo", price = 35, trackStock = false, kegGroup = "Pivo 12°", pourMl = 300),
-            Product(name = "Pivo 10°", category = "Pivo", price = 45, trackStock = false, kegGroup = "Pivo 10°", pourMl = 500),
+            Product(name = "Pivo 12° velké", category = "Čepované", price = 55, trackStock = false, kegGroup = "Pivo 12°", pourMl = 500, kind = "DRAUGHT"),
+            Product(name = "Pivo 12° malé", category = "Čepované", price = 35, trackStock = false, kegGroup = "Pivo 12°", pourMl = 300, kind = "DRAUGHT"),
+            Product(name = "Pivo 10°", category = "Čepované", price = 45, trackStock = false, kegGroup = "Pivo 10°", pourMl = 500, kind = "DRAUGHT"),
+            Product(name = "Víno bílé", category = "Rozlévané alko", price = 60, pourMl = 200, bottleMl = 750, unit = "lahev", stockQty = 6.0, minStock = 2.0, kind = "POURED_ALCO"),
+            Product(name = "Kofola točená", category = "Rozlévané nealko", price = 35, pourMl = 300, kind = "POURED_SOFT", trackStock = false),
+            Product(name = "Rum", category = "Lihoviny", price = 70, pourMl = 40, bottleMl = 700, unit = "lahev", stockQty = 3.0, minStock = 1.0, kind = "SPIRIT"),
             Product(name = "Nealko pivo", category = "Pivo", price = 40, unit = "ks", stockQty = 8.0, minStock = 6.0),
-            Product(name = "Víno bílé 0,2", category = "Víno", price = 60, unit = "l", trackStock = false),
-            Product(name = "Rum 4 cl", category = "Lihoviny", price = 70, trackStock = false),
             Product(name = "Kofola", category = "Nealko", price = 35, unit = "ks", stockQty = 24.0, minStock = 12.0),
             Product(name = "Minerálka", category = "Nealko", price = 30, unit = "ks", stockQty = 5.0, minStock = 12.0),
             Product(name = "Brambůrky", category = "Jídlo", price = 40, unit = "ks", stockQty = 10.0, minStock = 5.0),
@@ -452,3 +456,6 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
         tapKeg("Pivo 10°", 30.0)
     }
 }
+
+private fun Product.displayNameForLedger(): String =
+    if (pourMl > 0 && kegGroup == null) "$name ${cz.klubpos.domain.volumeLabel(pourMl)}" else name
