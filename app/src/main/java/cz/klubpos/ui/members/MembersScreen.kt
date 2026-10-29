@@ -256,7 +256,6 @@ private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected:
             .then(when {
                 m.vip || m.elder || m.jedi > 0 -> Modifier
                 selected -> Modifier.border(BorderStroke(4.dp, KlubColors.Amber), shape)
-                tileTint(m.tileColor) != null -> Modifier.border(1.5.dp, tileTint(m.tileColor)!!.copy(alpha = 0.7f), shape)
                 else -> Modifier.border(1.dp, KlubColors.Hairline, shape)
             })
             .clickable(onClick = onClick)
@@ -322,7 +321,6 @@ private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected:
 private fun AmountBadge(m: MemberStatus, modifier: Modifier) {
     val (text, color) = when {
         m.balance > 0 -> Credits.format(m.balance) to (if (m.todayUnpaid > 0) KlubColors.OpenTab else KlubColors.OldDebt)
-        m.paidToday -> "✓" to KlubColors.PaidToday
         else -> return
     }
     Text(text, modifier.shadow(12.dp, RoundedCornerShape(12.dp), ambientColor = color, spotColor = color)
