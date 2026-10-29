@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -125,6 +126,19 @@ fun SettingsScreen(onStartTour: () -> Unit = {}) {
                         }
                     }
                 }
+            }
+
+            // ---------- Členové ----------
+            Text("Členové", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            Column(Modifier.fillMaxWidth().glass().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Štítek „Nováček“ u nově přidaných členů", fontWeight = FontWeight.SemiBold)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(0 to "Vypnuto", 7 to "7 dní", 14 to "14 dní", 30 to "30 dní", 60 to "60 dní", 90 to "90 dní").forEach { (d, l) ->
+                        androidx.compose.material3.FilterChip(cfg.newbieDays == d, { appSettings.update { it.copy(newbieDays = d) } }, label = { Text(l) })
+                    }
+                }
+                Text("VIP nastavíš podržením dlaždice člena → Nastavit jako VIP, nebo v úpravě člena.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
             // ---------- Barmani ----------

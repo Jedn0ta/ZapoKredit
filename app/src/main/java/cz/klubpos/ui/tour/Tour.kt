@@ -79,7 +79,7 @@ val TOUR_STEPS = listOf(
         "Každý člen má dlaždici. Modrý rámeček = je v klubu. Číslo vpravo nahoře: oranžová = dnešní útrata, červená = dluh z minula, zelená ✓ = dnes zaplaceno.\nKlepnutím otevřeš jeho účet.",
         Gesture.TAP),
     TourStep(TourScreen.MEMBERS, "member_tile", "Rychlé akce",
-        "Podrž a pusť: příchod / odchod, zaplatit vše, fotka, úprava.\nPodrž a táhni: přesuneš dlaždici jinam (pořadí se uloží).", Gesture.HOLD),
+        "Podrž a pusť: příchod / odchod, zaplatit vše, VIP, fotka, úprava.\nPodrž a táhni: přesuneš dlaždici jinam (pořadí se uloží).", Gesture.HOLD),
     TourStep(TourScreen.MEMBERS, "keg_strip", "Stav sudů",
         "Sudy nahoře ukazují odhadovanou hladinu piva. Každé načepované pivo ji sníží podle objemu (0,5 / 0,3 l). Nový sud narazíš ve Skladu."),
     TourStep(TourScreen.MEMBERS, "search", "Hledání a filtr",

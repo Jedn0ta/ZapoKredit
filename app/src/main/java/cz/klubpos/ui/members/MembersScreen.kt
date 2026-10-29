@@ -36,6 +36,8 @@ import cz.klubpos.ui.components.reorderableGrid
 import cz.klubpos.ui.components.reorderItem
 import androidx.compose.foundation.clickable
 import cz.klubpos.ui.theme.glass
+import cz.klubpos.ui.theme.goldFrame
+import cz.klubpos.ui.theme.GoldMetal
 import cz.klubpos.ui.theme.Grotesk
 import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.shape.CircleShape
@@ -125,6 +127,7 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
     val local = remember { androidx.compose.runtime.mutableStateListOf<MemberStatus>() }
     androidx.compose.runtime.LaunchedEffect(shown) { if (reorder.draggingKey == null) { local.clear(); local.addAll(shown) } }
     val canReorder = filter == Filter.ALL && query.isBlank()
+    val newbieDays = cz.klubpos.ui.components.rememberSettings().flow.collectAsState().value.newbieDays
 
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         // Minimal header: search + segmented filter
@@ -152,7 +155,7 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 itemsIndexed(local, key = { _, m -> m.memberId }) { i, m ->
-                    MemberTile(m,
+                    MemberTile(m, newbie = m.isNewbie(newbieDays),
                         modifier = (if (i == 0) Modifier.tourTarget("member_tile") else Modifier).reorderItem(reorder, m.memberId),
                         onClick = { onOpenMember(m.memberId) })
                 }
@@ -173,6 +176,7 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
             onPayAll = { payAllFor = m; actionsFor = null },
             onPhoto = { photoFor = m; actionsFor = null },
             onEdit = { onEditMember(m.memberId); actionsFor = null },
+            onVip = { scope.launch { repo.setVip(m.memberId, !m.vip) }; actionsFor = null },
         )
     }
     payAllFor?.let { m ->
@@ -199,12 +203,14 @@ fun headlineColor(h: Headline): Color = when (h) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected: Boolean = false, onClick: () -> Unit) {
-    val haptic = LocalHapticFeedback.current
+private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected: Boolean = false, newbie: Boolean = false, onClick: () -> Unit) {
     val shape = RoundedCornerShape(24.dp)
     Box(
-        modifier.fillMaxWidth().aspectRatio(0.82f).clip(shape)
+        modifier.fillMaxWidth().aspectRatio(0.82f)
+            .then(if (m.vip) Modifier.goldFrame(shape) else Modifier)
+            .clip(shape)
             .then(when {
+                m.vip -> Modifier
                 selected -> Modifier.border(BorderStroke(4.dp, KlubColors.Amber), shape)
                 m.inClub -> Modifier.border(BorderStroke(2.5.dp, Brush.linearGradient(listOf(KlubColors.InClub, KlubColors.Violet))), shape)
                 else -> Modifier.border(1.dp, KlubColors.Hairline, shape)
@@ -225,6 +231,15 @@ private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected:
             }
         }
         AmountBadge(m, Modifier.align(Alignment.TopEnd).padding(8.dp))
+        Column(Modifier.align(Alignment.TopStart).padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (m.vip) Box(Modifier.size(30.dp).shadow(8.dp, CircleShape, ambientColor = KlubColors.Gold, spotColor = KlubColors.Gold)
+                .clip(CircleShape).background(Brush.linearGradient(GoldMetal)), contentAlignment = Alignment.Center) {
+                Text("♛", color = Color(0xFF4A3008), fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            }
+            if (newbie) Text("NOVÁČEK", Modifier.clip(RoundedCornerShape(8.dp))
+                .background(Brush.linearGradient(listOf(KlubColors.PaidToday, Color(0xFF2BB673)))).padding(horizontal = 7.dp, vertical = 3.dp),
+                color = KlubColors.Ink, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold))
+        }
         if (selected) Box(Modifier.align(Alignment.TopStart).padding(8.dp).size(28.dp).clip(CircleShape).background(KlubColors.Amber),
             contentAlignment = Alignment.Center) { Icon(Icons.Default.Check, null, tint = Color.Black, modifier = Modifier.size(18.dp)) }
     }
@@ -279,7 +294,7 @@ fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
 @Composable
 private fun QuickActionsSheet(
     m: MemberStatus, onDismiss: () -> Unit,
-    onToggleVisit: () -> Unit, onPayAll: () -> Unit, onPhoto: () -> Unit, onEdit: () -> Unit,
+    onToggleVisit: () -> Unit, onPayAll: () -> Unit, onPhoto: () -> Unit, onEdit: () -> Unit, onVip: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surface) {
         Column(Modifier.navigationBarsPadding().padding(bottom = 12.dp)) {
@@ -295,6 +310,9 @@ private fun QuickActionsSheet(
                 colors = colors, modifier = Modifier.combinedClickable(onClick = onPayAll))
             ListItem(headlineContent = { Text("Fotka") }, leadingContent = { Icon(Icons.Default.CameraAlt, null) },
                 colors = colors, modifier = Modifier.combinedClickable(onClick = onPhoto))
+            ListItem(headlineContent = { Text(if (m.vip) "Zrušit VIP" else "Nastavit jako VIP") },
+                leadingContent = { Text("♛", fontSize = 20.sp, color = KlubColors.Gold) },
+                colors = colors, modifier = Modifier.combinedClickable(onClick = onVip))
             ListItem(headlineContent = { Text("Upravit") }, leadingContent = { Icon(Icons.Default.Edit, null) },
                 colors = colors, modifier = Modifier.combinedClickable(onClick = onEdit))
         }

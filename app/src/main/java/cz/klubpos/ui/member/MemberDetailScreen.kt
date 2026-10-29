@@ -325,9 +325,9 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
     }
     if (showHistory) HistorySheet(ledger, onDismiss = { showHistory = false }) { e -> voidWithUndo(e.id, e.description) }
     if (showEdit) member?.let { m ->
-        EditMemberDialog(m.name, m.nickname ?: "", m.note ?: "", onDismiss = { showEdit = false },
-            onArchive = { scope.launch { repo.updateMember(m.copy(active = false)) }; showEdit = false; onBack() }) { n, nick, note ->
-            scope.launch { repo.updateMember(m.copy(name = n, nickname = nick.ifBlank { null }, note = note.ifBlank { null })) }
+        EditMemberDialog(m.name, m.nickname ?: "", m.note ?: "", m.vip, onDismiss = { showEdit = false },
+            onArchive = { scope.launch { repo.updateMember(m.copy(active = false)) }; showEdit = false; onBack() }) { n, nick, note, vip ->
+            scope.launch { repo.updateMember(m.copy(name = n, nickname = nick.ifBlank { null }, note = note.ifBlank { null }, vip = vip)) }
             showEdit = false
         }
     }
@@ -822,9 +822,10 @@ private fun StepButton(label: String, onClick: () -> Unit) {
 
 @Composable
 private fun EditMemberDialog(
-    name0: String, nick0: String, note0: String,
-    onDismiss: () -> Unit, onArchive: () -> Unit, onSave: (String, String, String) -> Unit,
+    name0: String, nick0: String, note0: String, vip0: Boolean,
+    onDismiss: () -> Unit, onArchive: () -> Unit, onSave: (String, String, String, Boolean) -> Unit,
 ) {
+    var vip by remember { mutableStateOf(vip0) }
     var name by remember { mutableStateOf(name0) }
     var nick by remember { mutableStateOf(nick0) }
     var note by remember { mutableStateOf(note0) }
@@ -836,10 +837,15 @@ private fun EditMemberDialog(
                 OutlinedTextField(name, { name = it }, label = { Text("Jméno") }, singleLine = true)
                 OutlinedTextField(nick, { nick = it }, label = { Text("Přezdívka") }, singleLine = true)
                 OutlinedTextField(note, { note = it }, label = { Text("Poznámka") })
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable { vip = !vip }.padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text("♛  VIP člen (zlatý rám)", Modifier.weight(1f), color = if (vip) KlubColors.Gold else MaterialTheme.colorScheme.onSurface)
+                    androidx.compose.material3.Switch(vip, { vip = it })
+                }
                 TextButton(onClick = onArchive) { Text("Archivovat člena", color = KlubColors.OldDebt) }
             }
         },
-        confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = { onSave(name, nick, note) }) { Text("Uložit") } },
+        confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = { onSave(name, nick, note, vip) }) { Text("Uložit") } },
         dismissButton = { TextButton(onDismiss) { Text("Zrušit") } },
     )
 }

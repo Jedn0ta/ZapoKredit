@@ -22,6 +22,8 @@ data class Settings(
     val autoLockMinutes: Int = 0,
     /** Product ordering: "ALPHA" = A–Z, "TYPE" = by category (jídlo / alko / limo…) then A–Z. */
     val productSort: String = "TYPE",
+    /** Newcomer label for new members: how many days. 0 = off. */
+    val newbieDays: Int = 30,
 )
 
 /** Small encrypted key-value store for app configuration. */
@@ -43,6 +45,7 @@ class AppSettings(context: Context) {
         tourDone = prefs.getBoolean("tourDone", false),
         autoLockMinutes = prefs.getInt("autoLockMinutes", 0),
         productSort = prefs.getString("productSort", "TYPE") ?: "TYPE",
+        newbieDays = prefs.getInt("newbieDays", 30),
     )
 
     fun update(transform: (Settings) -> Settings) {
@@ -55,6 +58,7 @@ class AppSettings(context: Context) {
             .putBoolean("tourDone", s.tourDone)
             .putInt("autoLockMinutes", s.autoLockMinutes)
             .putString("productSort", s.productSort)
+            .putInt("newbieDays", s.newbieDays)
             .apply()
         _flow.value = s
     }

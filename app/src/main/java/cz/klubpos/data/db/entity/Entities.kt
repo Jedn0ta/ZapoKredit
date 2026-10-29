@@ -18,6 +18,8 @@ data class Member(
     val createdAt: Long = System.currentTimeMillis(),
     /** Position on the main screen (drag & drop). */
     @androidx.room.ColumnInfo(defaultValue = "0") val sortOrder: Int = 0,
+    /** VIP member – shown with a gold frame. */
+    @androidx.room.ColumnInfo(defaultValue = "0") val vip: Boolean = false,
 )
 
 @Entity(tableName = "products")

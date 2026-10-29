@@ -31,7 +31,7 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 @Database(
     entities = [Member::class, Product::class, Visit::class, LedgerEntry::class,
         StockMovement::class, ShoppingItem::class, Bartender::class, Keg::class, Supplier::class, KegStock::class],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -94,13 +94,19 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE members ADD COLUMN vip INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         /** Whole DB file is encrypted with SQLCipher (AES-256); key comes from the Android Keystore. */
         fun create(context: Context): AppDatabase {
             System.loadLibrary("sqlcipher")
             val factory = SupportOpenHelperFactory(DatabaseKeyManager.getOrCreatePassphrase(context))
             return Room.databaseBuilder(context, AppDatabase::class.java, "klubpos.db")
                 .openHelperFactory(factory)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                 // Before first production release replace with real migrations.
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()

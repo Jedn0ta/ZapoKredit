@@ -14,6 +14,10 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.shadow
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -144,3 +148,38 @@ fun Modifier.glass(shape: Shape = RoundedCornerShape(24.dp), alpha: Float = 0.05
     this.clip(shape)
         .background(Brush.verticalGradient(listOf(Color.White.copy(alpha = alpha + 0.025f), Color.White.copy(alpha = alpha))))
         .border(1.dp, KlubColors.Hairline, shape)
+
+/** Metallic gold palette: dark bronze → bright gold → pale highlight → gold → bronze. */
+val GoldMetal = listOf(
+    Color(0xFF7A5417), Color(0xFFB8862B), Color(0xFFF5D06F), Color(0xFFFFF4C2),
+    Color(0xFFF5D06F), Color(0xFFC9962F), Color(0xFF7A5417),
+)
+
+/**
+ * Real-looking gold frame: thick metallic gradient border with a slowly travelling glint,
+ * plus a warm outer glow. Used for VIP members.
+ */
+fun Modifier.goldFrame(shape: Shape, width: androidx.compose.ui.unit.Dp = 4.dp): Modifier = androidx.compose.ui.composed {
+    val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "gold")
+    val shift by t.animateFloat(
+        0f, 1f,
+        androidx.compose.animation.core.infiniteRepeatable(
+            androidx.compose.animation.core.tween(3200, easing = androidx.compose.animation.core.LinearEasing),
+        ), label = "glint",
+    )
+    this
+        .shadow(18.dp, shape, ambientColor = Color(0xFFF5C451), spotColor = Color(0xFFF5C451))
+        .drawWithContent {
+            drawContent()
+            val w = size.width; val h = size.height
+            val off = (shift * 2f - 0.5f) * (w + h)
+            val brush = Brush.linearGradient(GoldMetal, start = Offset(off - w, off - h), end = Offset(off, off),
+                tileMode = androidx.compose.ui.graphics.TileMode.Mirror)
+            val px = width.toPx()
+            val outline = shape.createOutline(size, layoutDirection, this)
+            // inset path so the stroke stays inside the clip
+            drawOutline(outline, brush, style = androidx.compose.ui.graphics.drawscope.Stroke(width = px * 2))
+            // fine inner bevel line
+            drawOutline(outline, Color(0x99FFF4C2), style = androidx.compose.ui.graphics.drawscope.Stroke(width = px * 0.35f))
+        }
+}

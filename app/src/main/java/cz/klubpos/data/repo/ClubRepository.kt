@@ -74,6 +74,8 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
 
     suspend fun updateMember(m: Member) = db.members().update(m)
 
+    suspend fun setVip(memberId: Long, vip: Boolean) { db.members().get(memberId)?.let { db.members().update(it.copy(vip = vip)) } }
+
     /** Persist drag & drop order of the main screen. */
     suspend fun saveMemberOrder(ids: List<Long>) = db.withTransaction { ids.forEachIndexed { i, id -> db.members().setOrder(id, i) } }
     suspend fun saveProductOrder(ids: List<Long>) = db.withTransaction { ids.forEachIndexed { i, id -> db.products().setOrder(id, i) } }
