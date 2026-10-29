@@ -8,9 +8,13 @@
 #   SIGNING_KEY_PASSWORD      key password
 name: Release APK
 
+# Every push to main publishes a release vX.Y.<run number> (base X.Y is appVersionBase in
+# gradle.properties). Pushing a tag v1.2.3 publishes exactly that version instead.
 on:
   push:
+    branches: [main]
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -42,7 +46,13 @@ jobs:
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            BASE=$(grep '^appVersionBase=' gradle.properties | cut -d= -f2)
+            VERSION="$BASE.${{ github.run_number }}"
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           chmod +x gradlew
           ./gradlew assembleRelease -PversionName="$VERSION" -PversionCode="${{ github.run_number }}"
           mkdir -p dist
@@ -51,5 +61,8 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ env.VERSION }}
+          name: ZapoKredit ${{ env.VERSION }}
+          target_commitish: ${{ github.sha }}
           files: dist/*.apk
           generate_release_notes: true
