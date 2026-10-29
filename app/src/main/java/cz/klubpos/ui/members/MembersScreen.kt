@@ -109,11 +109,6 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
     var actionsFor by remember { mutableStateOf<MemberStatus?>(null) }
     var photoFor by remember { mutableStateOf<MemberStatus?>(null) }
     var payAllFor by remember { mutableStateOf<MemberStatus?>(null) }
-    // Round mode: select several members, then pick one product for all of them.
-    var roundMode by remember { mutableStateOf(false) }
-    val roundSel = remember { androidx.compose.runtime.mutableStateListOf<Long>() }
-    var pickRoundProduct by remember { mutableStateOf(false) }
-    val products by repo.activeProducts().collectAsState(initial = emptyList())
 
     val shown = members
         .filter { when (filter) { Filter.ALL -> true; Filter.IN_CLUB -> it.inClub; Filter.DEBT -> it.hasDebt } }
@@ -126,12 +121,6 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SearchField(query, { query = it }, Modifier.weight(1f).tourTarget("search"))
             Segmented(Filter.entries.map { it.label }, filter.ordinal) { filter = Filter.entries[it] }
-            Box(Modifier.size(48.dp)
-                .then(if (roundMode) Modifier.clip(RoundedCornerShape(16.dp)).background(KlubColors.GoldBrush) else Modifier.glass(RoundedCornerShape(16.dp)))
-                .tourTarget("round_button")
-                .combinedClickable(onClick = { roundMode = !roundMode; roundSel.clear() }), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.Groups, "Runda", tint = if (roundMode) Color.Black else MaterialTheme.colorScheme.onSurface)
-            }
         }
         Box(Modifier.weight(1f)) {
             LazyVerticalGrid(
@@ -141,39 +130,17 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 itemsIndexed(shown, key = { _, m -> m.memberId }) { i, m ->
-                    val selected = m.memberId in roundSel
                     MemberTile(m,
                         modifier = if (i == 0) Modifier.tourTarget("member_tile") else Modifier,
-                        selected = roundMode && selected,
-                        onClick = {
-                            if (roundMode) { if (selected) roundSel.remove(m.memberId) else roundSel.add(m.memberId) }
-                            else onOpenMember(m.memberId)
-                        },
-                        onLongClick = { if (!roundMode) actionsFor = m })
+                        onClick = { onOpenMember(m.memberId) },
+                        onLongClick = { actionsFor = m })
                 }
             }
-            if (roundMode) {
-                // Round bar
-                Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(if (roundSel.isEmpty()) "Označ členy pro rundu" else "Runda · ${roundSel.size}",
-                        Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                    TextButton({ roundMode = false; roundSel.clear() }) { Text("Zrušit") }
-                    Box(Modifier.height(52.dp).clip(RoundedCornerShape(14.dp))
-                        .background(if (roundSel.isNotEmpty()) KlubColors.Amber else MaterialTheme.colorScheme.surfaceVariant)
-                        .combinedClickable(enabled = roundSel.isNotEmpty(), onClick = { pickRoundProduct = true })
-                        .padding(horizontal = 22.dp), contentAlignment = Alignment.Center) {
-                        Text("Vybrat položku", color = Color.Black, fontWeight = FontWeight.Bold)
-                    }
-                }
-            } else {
-                // Small add button bottom-right
-                Box(Modifier.align(Alignment.BottomEnd).padding(20.dp).size(60.dp)
-                    .shadow(20.dp, CircleShape, ambientColor = KlubColors.Gold, spotColor = KlubColors.Gold)
-                    .clip(CircleShape).background(KlubColors.GoldBrush).tourTarget("add_member")
-                    .combinedClickable(onClick = { showAdd = true }), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.Add, "Nový člen", tint = MaterialTheme.colorScheme.onPrimary)
-                }
+            Box(Modifier.align(Alignment.BottomEnd).padding(20.dp).size(60.dp)
+                .shadow(20.dp, CircleShape, ambientColor = KlubColors.Gold, spotColor = KlubColors.Gold)
+                .clip(CircleShape).background(KlubColors.GoldBrush).tourTarget("add_member")
+                .combinedClickable(onClick = { showAdd = true }), contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.Add, "Nový člen", tint = MaterialTheme.colorScheme.onPrimary)
             }
         }
     }
@@ -195,27 +162,6 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
             confirmButton = { TextButton({ scope.launch { repo.pay(m.memberId, m.balance, closeVisitAfter = true) }; payAllFor = null }) { Text("Zaplaceno") } },
             dismissButton = { TextButton({ payAllFor = null }) { Text("Zpět") } },
         )
-    }
-    if (pickRoundProduct) ModalBottomSheet(onDismissRequest = { pickRoundProduct = false },
-        containerColor = MaterialTheme.colorScheme.surface) {
-        Text("Runda pro ${roundSel.size}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
-        LazyVerticalGrid(GridCells.Adaptive(110.dp), contentPadding = PaddingValues(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.height(420.dp)) {
-            items(products, key = { it.id }) { p ->
-                Column(Modifier.aspectRatio(1.2f).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceVariant)
-                    .combinedClickable(onClick = {
-                        val ids = roundSel.toList()
-                        scope.launch { repo.chargeRound(ids, p.id) }
-                        pickRoundProduct = false; roundMode = false; roundSel.clear()
-                    }).padding(10.dp), verticalArrangement = Arrangement.SpaceBetween) {
-                    Box(Modifier.fillMaxWidth().height(4.dp).background(categoryColor(p.category)))
-                    Text(p.name, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text("${p.price} × ${roundSel.size}", color = categoryColor(p.category), fontWeight = FontWeight.Bold)
-                }
-            }
-        }
     }
     photoFor?.let { m -> QrUploadDialog("Fotka – ${m.nickname ?: m.name}", onImage = { repo.setMemberPhoto(m.memberId, it) }) { photoFor = null } }
     if (showAdd) AddMemberDialog(onDismiss = { showAdd = false }) { name, nick ->

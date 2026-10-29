@@ -83,6 +83,17 @@ interface LedgerDao {
     )
     fun observeTopProducts(since: Long, limit: Int): Flow<List<ProductCount>>
 
+    /** What this member orders most (voided charges excluded). */
+    @Query(
+        """
+        SELECT productId, SUM(quantity) AS qty FROM ledger l
+        WHERE memberId = :memberId AND productId IS NOT NULL AND type = 'CHARGE' AND voidsEntryId IS NULL
+          AND NOT EXISTS (SELECT 1 FROM ledger v WHERE v.voidsEntryId = l.id)
+        GROUP BY productId ORDER BY qty DESC LIMIT :limit
+        """
+    )
+    fun observeMemberTopProducts(memberId: Long, limit: Int): Flow<List<ProductCount>>
+
     @Query(
         """
         SELECT

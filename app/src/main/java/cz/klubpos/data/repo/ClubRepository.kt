@@ -174,6 +174,8 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
     fun topProducts(days: Int = 30, limit: Int = 8) =
         db.ledger().observeTopProducts(System.currentTimeMillis() - days * 86_400_000L, limit)
 
+    fun memberFavorites(memberId: Long, limit: Int = 8) = db.ledger().observeMemberTopProducts(memberId, limit)
+
     fun topProductsSince(since: Long, limit: Int) = db.ledger().observeTopProducts(since, limit)
 
     suspend fun daySummary(dayStart: Long) = db.ledger().daySummary(dayStart)

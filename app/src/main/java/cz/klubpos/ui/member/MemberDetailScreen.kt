@@ -164,7 +164,8 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
     var qtyFor by remember { mutableStateOf<Product?>(null) }
     var transferLine by remember { mutableStateOf<ReceiptLine?>(null) }
     val settings by rememberSettings().flow.collectAsState()
-    val top by remember { repo.topProducts() }.collectAsState(initial = emptyList())
+    // Favourites = what THIS member orders most often.
+    val top by remember(memberId) { repo.memberFavorites(memberId) }.collectAsState(initial = emptyList())
     val favorites = remember(top, products) { top.mapNotNull { t -> products.firstOrNull { it.id == t.productId } } }
     var lastLabel by remember { mutableStateOf<String?>(null) }
     androidx.compose.runtime.LaunchedEffect(ledger) { lastLabel = repo.lastChargeLabel(memberId) }
@@ -291,8 +292,8 @@ private fun ProductGrid(
     onTap: (Product) -> Unit, onLong: (Product) -> Unit, onCustom: () -> Unit, onRepeat: () -> Unit,
 ) {
     val categories = remember(products) { products.map { it.category }.distinct() }
-    // Default view = favourites ("★") once there is some sales history.
-    var cat by remember(favorites.isNotEmpty()) { mutableStateOf<String?>(if (favorites.isNotEmpty()) FAV else null) }
+    // Default view = everything; "★ Oblíbené" shows what this member usually has.
+    var cat by remember { mutableStateOf<String?>(null) }
     Column(modifier) {
         if (lastLabel != null) Row(Modifier.padding(start = 12.dp, top = 6.dp).clip(RoundedCornerShape(18.dp))
             .glass(RoundedCornerShape(18.dp)).clickable(onClick = onRepeat).padding(horizontal = 14.dp, vertical = 8.dp)) {
@@ -300,8 +301,8 @@ private fun ProductGrid(
         }
         if (categories.size > 1 || favorites.isNotEmpty()) Row(Modifier.tourTarget("favorites").horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (favorites.isNotEmpty()) CategoryPill("★ Oblíbené", KlubColors.Amber, cat == FAV) { cat = FAV }
             CategoryPill("Vše", null, cat == null) { cat = null }
+            if (favorites.isNotEmpty()) CategoryPill("★ Oblíbené", KlubColors.Amber, cat == FAV) { cat = FAV }
             categories.forEach { c -> CategoryPill(c, categoryColor(c), cat == c) { cat = c } }
         }
         LazyVerticalGrid(

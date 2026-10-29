@@ -131,7 +131,11 @@ fun AppBackground(content: @Composable BoxScope.() -> Unit) {
             drawRect(Brush.radialGradient(listOf(KlubColors.Violet.copy(alpha = 0.12f), Color.Transparent),
                 center = Offset(size.width * 1.0f, size.height * 1.0f), radius = size.maxDimension * 0.7f))
         }
-        content()
+        // The backdrop is not a Material Surface, so set the default text/icon colour explicitly
+        // (otherwise Text without a colour falls back to black on the dark background).
+        androidx.compose.runtime.CompositionLocalProvider(
+            androidx.compose.material3.LocalContentColor provides KlubColors.Cream,
+        ) { content() }
     }
 }
 
