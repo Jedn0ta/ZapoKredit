@@ -77,6 +77,26 @@ fun SettingsScreen() {
             Modifier.padding(pad).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            // ---------- Provoz ----------
+            var confirmNight by remember { mutableStateOf(false) }
+            val repo = cz.klubpos.ui.components.rememberRepo()
+            Card(Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Ukončit večer", fontWeight = FontWeight.SemiBold)
+                        Text("Všem zavře účet. Dluhy zůstanou.", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    OutlinedButton(onClick = { confirmNight = true }) { Text("Ukončit") }
+                }
+            }
+            if (confirmNight) androidx.compose.material3.AlertDialog(
+                onDismissRequest = { confirmNight = false },
+                title = { Text("Ukončit večer?") },
+                confirmButton = { TextButton({ scope.launch { repo.closeAllVisits() }; confirmNight = false }) { Text("Ukončit") } },
+                dismissButton = { TextButton({ confirmNight = false }) { Text("Zpět") } },
+            )
+
             // ---------- O aplikaci ----------
             Text("O aplikaci", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
             Card(Modifier.fillMaxWidth()) {

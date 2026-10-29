@@ -1,37 +1,38 @@
 package cz.klubpos.ui.shopping
 
 import android.content.Intent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoFixHigh
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -41,17 +42,27 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import cz.klubpos.data.db.entity.ShoppingItem
-import cz.klubpos.ui.components.NumberDialog
+import cz.klubpos.ui.components.SwipeAction
+import cz.klubpos.ui.components.SwipeRow
 import cz.klubpos.ui.components.rememberRepo
+import cz.klubpos.ui.inventory.KeypadDialog
 import cz.klubpos.ui.member.fmtQty
+import cz.klubpos.ui.theme.KlubColors
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Shopping list.
+ *  swipe →  bought (and received into stock)
+ *  swipe ←  remove
+ *  tap qty  change amount
+ */
 @Composable
 fun ShoppingScreen() {
     val repo = rememberRepo()
@@ -59,84 +70,99 @@ fun ShoppingScreen() {
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     val items by repo.shoppingList().collectAsState(initial = emptyList())
-    var receiveOnCheck by remember { mutableStateOf(true) }
+    val open = items.filter { !it.done }
+    val done = items.filter { it.done }
     var showAdd by remember { mutableStateOf(false) }
     var qtyFor by remember { mutableStateOf<ShoppingItem?>(null) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(title = { Text("Nákupní seznam") }, actions = {
-                IconButton(onClick = {
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().statusBarsPadding()) {
+            Row(Modifier.fillMaxWidth().padding(20.dp, 12.dp, 8.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Nákup", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                IconButton({
                     scope.launch {
                         val n = repo.generateShoppingList()
-                        snackbar.showSnackbar(if (n > 0) "Přidáno ze skladu: $n" else "Nic dalšího nedochází")
+                        snackbar.showSnackbar(if (n > 0) "Doplněno ze skladu: $n" else "Nic dalšího nedochází")
                     }
                 }) { Icon(Icons.Default.AutoFixHigh, "Doplnit podle skladu") }
-                IconButton(onClick = {
-                    val text = items.filter { !it.done }.joinToString("\n") { "• ${it.name} – ${fmtQty(it.quantity)} ${it.unit}" }
+                IconButton(enabled = open.isNotEmpty(), onClick = {
+                    val text = open.joinToString("\n") { "• ${it.name} – ${fmtQty(it.quantity)} ${it.unit}" }
                     context.startActivity(Intent.createChooser(
-                        Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, "Nákup do klubu:\n$text"), "Sdílet"))
+                        Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, "Nákup:\n$text"), null))
                 }) { Icon(Icons.Default.Share, "Sdílet") }
-                IconButton(onClick = { scope.launch { repo.clearBought() } }) { Icon(Icons.Default.Delete, "Smazat koupené") }
-            })
-        },
-        floatingActionButton = { FloatingActionButton({ showAdd = true }) { Icon(Icons.Default.Add, "Přidat") } },
-        snackbarHost = { SnackbarHost(snackbar) },
-    ) { pad ->
-        Column(Modifier.padding(pad)) {
-            Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Switch(receiveOnCheck, { receiveOnCheck = it })
-                Text("  Odškrtnutím rovnou naskladnit", style = MaterialTheme.typography.bodyMedium)
+                IconButton({ showAdd = true }) { Icon(Icons.Default.Add, "Přidat") }
             }
-            if (items.isEmpty()) Text("Seznam je prázdný. Ikonou ✨ doplníš vše, co dochází.",
-                Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
-                items(items, key = { it.id }) { item ->
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(item.done, { checked ->
-                            scope.launch { repo.setShoppingDone(item, checked, receiveOnCheck) }
-                        })
-                        Text(item.name, Modifier.weight(1f),
-                            textDecoration = if (item.done) TextDecoration.LineThrough else null,
-                            color = if (item.done) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
-                        Text("${fmtQty(item.quantity)} ${item.unit}",
-                            Modifier.clickable(enabled = !item.done) { qtyFor = item }.padding(12.dp),
-                            color = MaterialTheme.colorScheme.primary)
-                        IconButton({ scope.launch { repo.deleteShoppingItem(item.id) } }) { Icon(Icons.Default.Delete, "Odebrat") }
+            if (items.isEmpty()) Text("Prázdné", Modifier.padding(20.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+                items(open, key = { it.id }) { item ->
+                    SwipeRow(
+                        start = SwipeAction(Icons.Default.Check, "Koupeno", KlubColors.PaidToday) {
+                            scope.launch { repo.setShoppingDone(item, true, receive = true) }
+                        },
+                        end = SwipeAction(Icons.Default.Delete, "Smazat", KlubColors.OldDebt) {
+                            scope.launch { repo.deleteShoppingItem(item.id) }
+                        },
+                    ) { ItemRow(item, onQty = { qtyFor = item }) }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.surface)
+                }
+                if (done.isNotEmpty()) item {
+                    Row(Modifier.fillMaxWidth().padding(20.dp, 20.dp, 8.dp, 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Koupeno", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        TextButton({ scope.launch { repo.clearBought() } }) { Text("Vyčistit") }
                     }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                }
+                items(done, key = { it.id }) { item ->
+                    // Swipe back if ticked by mistake (stock is not reverted automatically).
+                    SwipeRow(start = SwipeAction(Icons.AutoMirrored.Filled.Undo, "Vrátit", KlubColors.Amber) {
+                        scope.launch { repo.setShoppingDone(item, false, receive = false) }
+                    }) { ItemRow(item, onQty = {}) }
                 }
             }
         }
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
     }
 
     qtyFor?.let { item ->
-        NumberDialog("Množství: ${item.name}", initial = fmtQty(item.quantity), label = item.unit, decimal = true,
-            onDismiss = { qtyFor = null }) { q -> scope.launch { repo.updateShoppingQty(item, q) }; qtyFor = null }
+        KeypadDialog(item.name, fmtQty(item.quantity), item.unit, onDismiss = { qtyFor = null }) { q ->
+            scope.launch { repo.updateShoppingQty(item, q) }; qtyFor = null
+        }
     }
-    if (showAdd) AddDialog(onDismiss = { showAdd = false }) { name, q, unit ->
-        scope.launch { repo.addShoppingItem(name, q, unit) }; showAdd = false
+    if (showAdd) AddDialog(onDismiss = { showAdd = false }) { name ->
+        scope.launch { repo.addShoppingItem(name, 1.0, "ks") }; showAdd = false
     }
 }
 
 @Composable
-private fun AddDialog(onDismiss: () -> Unit, onAdd: (String, Double, String) -> Unit) {
+private fun ItemRow(item: ShoppingItem, onQty: () -> Unit) {
+    Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).padding(start = 20.dp, end = 8.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        if (item.done) Box(Modifier.size(8.dp).clip(CircleShape).background(KlubColors.PaidToday))
+        Text(item.name, Modifier.weight(1f).padding(start = if (item.done) 12.dp else 0.dp, top = 16.dp, bottom = 16.dp),
+            fontSize = 17.sp,
+            textDecoration = if (item.done) TextDecoration.LineThrough else null,
+            color = if (item.done) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
+        Text("${fmtQty(item.quantity)} ${item.unit}",
+            Modifier.clip(CircleShape).clickable(enabled = !item.done, onClick = onQty).padding(horizontal = 12.dp, vertical = 8.dp),
+            fontWeight = FontWeight.Bold, fontSize = 17.sp,
+            color = if (item.done) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary)
+    }
+}
+
+@Composable
+private fun AddDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
     var name by remember { mutableStateOf("") }
-    var qty by remember { mutableStateOf("1") }
-    var unit by remember { mutableStateOf("ks") }
-    val q = qty.replace(',', '.').toDoubleOrNull()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Přidat do nákupu") },
+        title = { Text("Přidat") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(name, { name = it }, label = { Text("Co (např. ubrousky)") }, singleLine = true)
-                OutlinedTextField(qty, { qty = it }, label = { Text("Množství") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
-                OutlinedTextField(unit, { unit = it }, label = { Text("Jednotka") }, singleLine = true)
+                OutlinedTextField(name, { name = it }, placeholder = { Text("Např. ubrousky") }, singleLine = true)
+                Text("Množství upravíš klepnutím v seznamu.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
-        confirmButton = { TextButton(enabled = name.isNotBlank() && q != null && q > 0, onClick = { onAdd(name, q!!, unit) }) { Text("Přidat") } },
+        confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = { onAdd(name) }) { Text("Přidat") } },
         dismissButton = { TextButton(onDismiss) { Text("Zrušit") } },
     )
 }

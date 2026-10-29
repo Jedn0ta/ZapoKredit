@@ -1,10 +1,14 @@
 package cz.klubpos.ui.member
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -17,8 +21,10 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -31,31 +37,30 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -63,116 +68,156 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import cz.klubpos.data.db.entity.EntryType
 import cz.klubpos.data.db.entity.LedgerEntry
 import cz.klubpos.data.db.entity.Product
+import cz.klubpos.domain.BusinessDay
 import cz.klubpos.domain.Credits
 import cz.klubpos.domain.MemberStatus
 import cz.klubpos.ui.components.EncryptedImage
-import cz.klubpos.ui.components.NumberDialog
-import cz.klubpos.ui.components.QrUploadDialog
+import cz.klubpos.ui.components.SwipeAction
+import cz.klubpos.ui.components.SwipeRow
+import cz.klubpos.ui.components.categoryColor
 import cz.klubpos.ui.components.rememberRepo
-import cz.klubpos.ui.members.headlineColor
 import cz.klubpos.ui.theme.KlubColors
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/** Today's charges for one item, aggregated like a receipt line. */
+private data class ReceiptLine(
+    val key: String, val name: String, val productId: Long?, val unitPrice: Long,
+    val qty: Double, val amount: Long, val entryIds: List<Long>,   // newest first
+)
+
+private fun buildReceipt(ledger: List<LedgerEntry>, dayStart: Long): Pair<List<ReceiptLine>, List<LedgerEntry>> {
+    val voided = ledger.mapNotNull { it.voidsEntryId }.toSet()
+    val today = ledger.filter { it.createdAt >= dayStart && it.voidsEntryId == null && it.id !in voided }
+    val lines = today.filter { it.type == EntryType.CHARGE }
+        .groupBy { "${it.productId ?: it.description}|${it.unitPrice}" }
+        .map { (k, es) ->
+            ReceiptLine(k, es.first().description, es.first().productId, es.first().unitPrice,
+                es.sumOf { it.quantity }, es.sumOf { it.amount }, es.sortedByDescending { it.createdAt }.map { it.id })
+        }
+        .sortedByDescending { l -> today.first { it.id == l.entryIds.first() }.createdAt }
+    val payments = today.filter { it.type == EntryType.PAYMENT }
+    return lines to payments
+}
+
+/**
+ * Order screen – the bartender's main workspace.
+ *  product tap        → +1 on the tab (haptic + count badge)
+ *  product long-press → quantity / different price
+ *  receipt line swipe ← storno 1 ks, swipe → +1 ks
+ *  Zaplatit tap       → payment sheet; long-press → pay everything at once
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
     val repo = rememberRepo()
     val scope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
     val snackbar = remember { SnackbarHostState() }
+    val dayStart = remember { BusinessDay.startMillis() }
 
     val member by repo.member(memberId).collectAsState(initial = null)
-    val status by remember { repo.memberStatuses() }.collectAsState(initial = emptyList())
-    val st = status.firstOrNull { it.memberId == memberId }
+    val statuses by remember { repo.memberStatuses(dayStart) }.collectAsState(initial = emptyList())
+    val st = statuses.firstOrNull { it.memberId == memberId }
     val products by repo.activeProducts().collectAsState(initial = emptyList())
     val ledger by repo.ledger(memberId).collectAsState(initial = emptyList())
+    val (lines, payments) = remember(ledger) { buildReceipt(ledger, dayStart) }
+    val countByProduct = remember(lines) { lines.filter { it.productId != null }.groupBy { it.productId!! }.mapValues { e -> e.value.sumOf { it.qty } } }
 
     var showPay by remember { mutableStateOf(false) }
-    var showPhotoQr by remember { mutableStateOf(false) }
     var showCustom by remember { mutableStateOf(false) }
+    var showHistory by remember { mutableStateOf(false) }
+    var showReceiptSheet by remember { mutableStateOf(false) }
     var showEdit by remember { mutableStateOf(false) }
     var qtyFor by remember { mutableStateOf<Product?>(null) }
-    var voidEntry by remember { mutableStateOf<LedgerEntry?>(null) }
 
-    fun charge(p: Product, qty: Double = 1.0, price: Long? = null) = scope.launch {
+    fun add(p: Product, qty: Double = 1.0, price: Long? = null) = scope.launch {
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         repo.chargeProduct(memberId, p.id, qty, price)
-        snackbar.showSnackbar("+ ${p.name}" + if (qty != 1.0) " ×${fmtQty(qty)}" else "")
     }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(member?.nickname ?: member?.name ?: "") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Zpět") } },
-                actions = { IconButton(onClick = { showEdit = true }) { Icon(Icons.Default.Edit, "Upravit") } },
-            )
-        },
-        snackbarHost = { SnackbarHost(snackbar) },
-    ) { pad ->
-        BoxWithConstraints(Modifier.padding(pad).fillMaxSize()) {
-            val header: @Composable () -> Unit = {
-                Header(member?.name ?: "", member?.photoId, st,
-                    onPhoto = { showPhotoQr = true },
-                    onToggleVisit = { scope.launch { if (st?.inClub == true) repo.closeVisit(memberId) else repo.openVisit(memberId) } },
-                    onPay = { showPay = true })
-            }
-            val picker: @Composable (Modifier) -> Unit = { mod ->
-                ProductPicker(products, mod, onTap = { charge(it) }, onLong = { qtyFor = it }, onCustom = { showCustom = true })
-            }
-            val history: @Composable (Modifier) -> Unit = { mod -> History(ledger, mod) { voidEntry = it } }
-
-            if (maxWidth >= 720.dp) {
-                // Tablet: account on the left, products on the right.
-                Row(Modifier.fillMaxSize()) {
-                    Column(Modifier.width(360.dp).fillMaxHeight()) {
-                        header(); HorizontalDivider(); history(Modifier.weight(1f))
-                    }
-                    picker(Modifier.weight(1f).fillMaxHeight())
-                }
-            } else {
-                var tab by remember { mutableIntStateOf(0) }
-                Column(Modifier.fillMaxSize()) {
-                    header()
-                    TabRow(selectedTabIndex = tab) {
-                        Tab(tab == 0, { tab = 0 }, text = { Text("Zapsat") })
-                        Tab(tab == 1, { tab = 1 }, text = { Text("Účet") })
-                    }
-                    if (tab == 0) picker(Modifier.weight(1f)) else history(Modifier.weight(1f))
-                }
+    fun voidWithUndo(entryId: Long, label: String) = scope.launch {
+        repo.void(entryId)
+        snackbar.currentSnackbarData?.dismiss()
+        if (snackbar.showSnackbar("Storno: $label", actionLabel = "Vrátit") == SnackbarResult.ActionPerformed) {
+            // Undo = charge the same thing again
+            ledger.firstOrNull { it.id == entryId }?.let { e ->
+                if (e.productId != null) repo.chargeProduct(memberId, e.productId, e.quantity, e.unitPrice)
+                else repo.chargeCustom(memberId, e.description, e.amount)
             }
         }
     }
-
-    if (showPay && st != null) PayDialog(st, onDismiss = { showPay = false }) { amount, leave ->
-        scope.launch { repo.pay(memberId, amount, leave); snackbar.showSnackbar("Zaplaceno ${Credits.format(amount)}") }
-        showPay = false
+    fun payAll() = scope.launch {
+        val bal = st?.balance ?: 0
+        if (bal > 0) {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            repo.pay(memberId, bal, closeVisitAfter = false)
+            snackbar.showSnackbar("Zaplaceno ${Credits.format(bal)}")
+        }
     }
-    if (showPhotoQr) QrUploadDialog("Fotka člena", onImage = { repo.setMemberPhoto(memberId, it) }) { showPhotoQr = false }
+
+    val receipt: @Composable (Modifier) -> Unit = { mod ->
+        Receipt(st, lines, payments, mod,
+            onPlus = { l -> products.firstOrNull { it.id == l.productId }?.let { add(it, 1.0, l.unitPrice) } },
+            onMinus = { l -> voidWithUndo(l.entryIds.first(), l.name) })
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().statusBarsPadding()) {
+            TopRow(member?.nickname ?: member?.name ?: "", member?.photoId, st?.inClub == true,
+                onBack = onBack, onName = { showEdit = true }, onHistory = { showHistory = true })
+            BoxWithConstraints(Modifier.weight(1f)) {
+                if (maxWidth >= 720.dp) {
+                    // Tablet: products | receipt
+                    Row(Modifier.fillMaxSize()) {
+                        ProductGrid(products, countByProduct, Modifier.weight(1f).fillMaxHeight(),
+                            onTap = { add(it) }, onLong = { qtyFor = it }, onCustom = { showCustom = true })
+                        Column(Modifier.width(340.dp).fillMaxHeight().background(MaterialTheme.colorScheme.surface)) {
+                            receipt(Modifier.weight(1f))
+                            PayBar(st, expanded = true, onPay = { showPay = true }, onPayAll = { payAll() }, onOpen = {})
+                        }
+                    }
+                } else {
+                    Column(Modifier.fillMaxSize()) {
+                        ProductGrid(products, countByProduct, Modifier.weight(1f),
+                            onTap = { add(it) }, onLong = { qtyFor = it }, onCustom = { showCustom = true })
+                        PayBar(st, expanded = false, onPay = { showPay = true }, onPayAll = { payAll() },
+                            onOpen = { showReceiptSheet = true })
+                    }
+                }
+            }
+        }
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = 90.dp))
+    }
+
+    if (showReceiptSheet) ModalBottomSheet(onDismissRequest = { showReceiptSheet = false },
+        containerColor = MaterialTheme.colorScheme.surface) {
+        receipt(Modifier.fillMaxWidth().height(420.dp))
+    }
+    if (showPay && st != null) PaySheet(st, onDismiss = { showPay = false }) { amount, leave ->
+        scope.launch { repo.pay(memberId, amount, leave); snackbar.showSnackbar("Zaplaceno ${Credits.format(amount)}") }
+        showPay = false; if (leave) onBack()
+    }
     if (showCustom) CustomItemDialog(onDismiss = { showCustom = false }) { desc, price ->
         scope.launch { repo.chargeCustom(memberId, desc, price) }; showCustom = false
     }
-    qtyFor?.let { p ->
-        QtyPriceDialog(p, onDismiss = { qtyFor = null }) { qty, price -> charge(p, qty, price); qtyFor = null }
-    }
-    voidEntry?.let { e ->
-        AlertDialog(
-            onDismissRequest = { voidEntry = null },
-            title = { Text("Stornovat?") },
-            text = { Text("${e.description} · ${Credits.format(kotlin.math.abs(e.amount))}\nZapíše se opravná položka, skladu se vrátí množství.") },
-            confirmButton = { TextButton({ scope.launch { repo.void(e.id) }; voidEntry = null }) { Text("Storno") } },
-            dismissButton = { TextButton({ voidEntry = null }) { Text("Zpět") } },
-        )
-    }
+    qtyFor?.let { p -> QtyPriceDialog(p, onDismiss = { qtyFor = null }) { q, pr -> add(p, q, pr); qtyFor = null } }
+    if (showHistory) HistorySheet(ledger, onDismiss = { showHistory = false }) { e -> voidWithUndo(e.id, e.description) }
     if (showEdit) member?.let { m ->
         EditMemberDialog(m.name, m.nickname ?: "", m.note ?: "", onDismiss = { showEdit = false },
             onArchive = { scope.launch { repo.updateMember(m.copy(active = false)) }; showEdit = false; onBack() }) { n, nick, note ->
@@ -183,76 +228,51 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
 }
 
 @Composable
-private fun Header(
-    name: String, photoId: String?, st: MemberStatus?,
-    onPhoto: () -> Unit, onToggleVisit: () -> Unit, onPay: () -> Unit,
-) {
-    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-        EncryptedImage(photoId, name, Modifier.size(84.dp).clip(CircleShape).clickable(onClick = onPhoto), textSize = 30)
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            if (st != null) {
-                Text(st.headline.label, color = headlineColor(st.headline), fontWeight = FontWeight.Bold)
-                Text(
-                    when {
-                        st.balance > 0 -> "Na účtu ${Credits.format(st.balance)}"
-                        st.balance < 0 -> "Přeplatek ${Credits.format(-st.balance)}"
-                        else -> "Účet vyrovnán"
-                    },
-                    style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold,
-                )
-                if (st.todayUnpaid > 0 && st.olderDebt > 0) Text(
-                    "dnes ${Credits.format(st.todayUnpaid)} · z minula ${Credits.format(st.olderDebt)}",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun TopRow(name: String, photoId: String?, inClub: Boolean, onBack: () -> Unit, onName: () -> Unit, onHistory: () -> Unit) {
+    Row(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Zpět") }
+        Row(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable(onClick = onName).padding(6.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Box {
+                EncryptedImage(photoId, name, Modifier.size(40.dp).clip(CircleShape), textSize = 16)
+                if (inClub) Box(Modifier.align(Alignment.BottomEnd).size(12.dp).clip(CircleShape).background(KlubColors.InClub))
             }
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onToggleVisit) { Text(if (st?.inClub == true) "Odchod" else "Příchod") }
-                Button(onClick = onPay, enabled = (st?.balance ?: 0) > 0) { Text("Zaplatit") }
-            }
+            Spacer(Modifier.width(12.dp))
+            Text(name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
+        IconButton(onClick = onHistory) { Icon(Icons.Default.History, "Historie") }
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ProductPicker(
-    products: List<Product>, modifier: Modifier,
+private fun ProductGrid(
+    products: List<Product>, counts: Map<Long, Double>, modifier: Modifier,
     onTap: (Product) -> Unit, onLong: (Product) -> Unit, onCustom: () -> Unit,
 ) {
     val categories = remember(products) { products.map { it.category }.distinct() }
     var cat by remember { mutableStateOf<String?>(null) }
     Column(modifier) {
-        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp),
+        if (categories.size > 1) Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(cat == null, { cat = null }, label = { Text("Vše") })
-            categories.forEach { c -> FilterChip(cat == c, { cat = c }, label = { Text(c) }) }
+            CategoryPill("Vše", null, cat == null) { cat = null }
+            categories.forEach { c -> CategoryPill(c, categoryColor(c), cat == c) { cat = c } }
         }
-        Text("Klepnutí = 1 ks · podržení = množství / jiná cena", style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 12.dp))
         LazyVerticalGrid(
-            GridCells.Adaptive(120.dp),
+            GridCells.Adaptive(112.dp),
             contentPadding = PaddingValues(12.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             items(products.filter { cat == null || it.category == cat }, key = { it.id }) { p ->
-                Card(Modifier.combinedClickable(onClick = { onTap(p) }, onLongClick = { onLong(p) })) {
-                    EncryptedImage(p.imageId, p.name, Modifier.fillMaxWidth().aspectRatio(1.6f), textSize = 22)
-                    Column(Modifier.padding(8.dp)) {
-                        Text(p.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(Credits.format(p.price), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                            if (p.trackStock) Text(fmtQty(p.stockQty), style = MaterialTheme.typography.labelSmall,
-                                color = if (p.stockQty <= p.minStock) KlubColors.OldDebt else MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
+                ProductKey(p, counts[p.id] ?: 0.0, onTap = { onTap(p) }, onLong = { onLong(p) })
             }
             item {
-                Card(Modifier.clickable(onClick = onCustom)) {
-                    Box(Modifier.fillMaxWidth().aspectRatio(1.0f), contentAlignment = Alignment.Center) {
-                        Text("+ Vlastní\npoložka", fontWeight = FontWeight.Bold)
+                Box(Modifier.aspectRatio(1f).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surface)
+                    .clickable(onClick = onCustom), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.Add, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Částka", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -261,69 +281,210 @@ private fun ProductPicker(
 }
 
 @Composable
-private fun History(entries: List<LedgerEntry>, modifier: Modifier, onVoid: (LedgerEntry) -> Unit) {
-    val voided = remember(entries) { entries.mapNotNull { it.voidsEntryId }.toSet() }
-    val df = remember { SimpleDateFormat("d.M. HH:mm", Locale("cs", "CZ")) }
-    if (entries.isEmpty()) {
-        Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Text("Zatím žádné záznamy") }
-        return
+private fun CategoryPill(label: String, color: Color?, selected: Boolean, onClick: () -> Unit) {
+    Row(Modifier.height(36.dp).clip(RoundedCornerShape(18.dp))
+        .background(if (selected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
+        .clickable(onClick = onClick).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (color != null) { Box(Modifier.size(8.dp).clip(CircleShape).background(color)); Spacer(Modifier.width(8.dp)) }
+        Text(label, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
     }
-    LazyColumn(modifier, contentPadding = PaddingValues(vertical = 8.dp)) {
-        items(entries, key = { it.id }) { e ->
-            val isVoided = e.id in voided
-            val canVoid = !isVoided && e.voidsEntryId == null
-            Row(
-                Modifier.fillMaxWidth().clickable(enabled = canVoid) { onVoid(e) }.padding(horizontal = 16.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        e.description + if (e.quantity != 1.0) " ×${fmtQty(e.quantity)}" else "",
-                        textDecoration = if (isVoided) TextDecoration.LineThrough else null,
-                        color = if (isVoided) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(df.format(Date(e.createdAt)), style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                val payment = e.type == EntryType.PAYMENT
-                Text(
-                    (if (e.amount < 0) "−" else "+") + Credits.format(kotlin.math.abs(e.amount)),
-                    fontWeight = FontWeight.Bold,
-                    color = if (payment) KlubColors.PaidToday else MaterialTheme.colorScheme.onSurface,
-                )
+}
+
+/** Big POS key: category colour, name, price. Count badge = how many today. Bounces on tap. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ProductKey(p: Product, count: Double, onTap: () -> Unit, onLong: () -> Unit) {
+    val haptic = LocalHapticFeedback.current
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.93f else 1f, spring(dampingRatio = 0.45f, stiffness = 700f), label = "keyBounce")
+    val accent = categoryColor(p.category)
+    val low = p.trackStock && p.stockQty <= p.minStock
+    Box(
+        Modifier.aspectRatio(1f).scale(scale).clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .combinedClickable(
+                interactionSource = interaction, indication = ripple(),
+                onClick = onTap,
+                onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onLong() },
+            )
+    ) {
+        if (p.imageId != null) {
+            EncryptedImage(p.imageId, p.name, Modifier.fillMaxSize())
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)))
+        }
+        Box(Modifier.fillMaxWidth().height(5.dp).background(accent))
+        Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.SpaceBetween) {
+            Text(p.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, lineHeight = 18.sp, maxLines = 3,
+                overflow = TextOverflow.Ellipsis, color = Color.White, modifier = Modifier.padding(top = 4.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
+                Text("${p.price}", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = accent)
+                if (low) Box(Modifier.size(8.dp).clip(CircleShape).background(KlubColors.OldDebt))
             }
-            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+        }
+        if (count > 0) Text(fmtQty(count),
+            Modifier.align(Alignment.TopEnd).padding(6.dp).size(28.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)
+                .padding(top = 4.dp),
+            color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, fontSize = 14.sp)
+    }
+}
+
+@Composable
+private fun Receipt(
+    st: MemberStatus?, lines: List<ReceiptLine>, payments: List<LedgerEntry>, modifier: Modifier,
+    onPlus: (ReceiptLine) -> Unit, onMinus: (ReceiptLine) -> Unit,
+) {
+    LazyColumn(modifier, contentPadding = PaddingValues(vertical = 8.dp)) {
+        item {
+            Text("Dnes", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+        }
+        if (lines.isEmpty()) item {
+            Text("Klepni na položku", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(20.dp))
+        }
+        items(lines, key = { it.key }) { l ->
+            SwipeRow(
+                start = if (l.productId != null) SwipeAction(Icons.Default.Add, "+1", KlubColors.PaidToday) { onPlus(l) } else null,
+                end = SwipeAction(Icons.Default.Remove, "Storno", KlubColors.OldDebt) { onMinus(l) },
+            ) {
+                Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text(fmtQty(l.qty), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.width(36.dp))
+                    Text(l.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("${l.amount}", fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+        items(payments, key = { "p${it.id}" }) { p ->
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp)) {
+                Text("Zaplaceno", Modifier.weight(1f), color = KlubColors.PaidToday)
+                Text("−${-p.amount}", color = KlubColors.PaidToday, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        if (st != null && st.olderDebt > 0) item {
+            HorizontalDivider(Modifier.padding(horizontal = 20.dp, vertical = 4.dp), color = MaterialTheme.colorScheme.surfaceVariant)
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp)) {
+                Text("Z minula", Modifier.weight(1f), color = KlubColors.OldDebt)
+                Text("${st.olderDebt}", color = KlubColors.OldDebt, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}
+
+/** Bottom bar: total + big pay button. Tap = choose amount, hold = pay everything. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun PayBar(st: MemberStatus?, expanded: Boolean, onPay: () -> Unit, onPayAll: () -> Unit, onOpen: () -> Unit) {
+    val total = st?.balance ?: 0
+    Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).navigationBarsPadding().padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable(enabled = !expanded, onClick = onOpen).padding(8.dp)) {
+            Text(if (expanded) "Celkem" else "Účet ▴", style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(if (total < 0) "+${Credits.format(-total)}" else Credits.format(total),
+                fontSize = 26.sp, fontWeight = FontWeight.Bold,
+                color = when { total <= 0 -> KlubColors.PaidToday; (st?.todayUnpaid ?: 0) > 0 -> MaterialTheme.colorScheme.onSurface; else -> KlubColors.OldDebt })
+        }
+        val enabled = total > 0
+        Box(Modifier.height(60.dp).width(160.dp).clip(RoundedCornerShape(14.dp))
+            .background(if (enabled) KlubColors.PaidToday else MaterialTheme.colorScheme.surfaceVariant)
+            .combinedClickable(enabled = enabled, onClick = onPay, onLongClick = onPayAll),
+            contentAlignment = Alignment.Center) {
+            Text("Zaplatit", color = if (enabled) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PaySheet(st: MemberStatus, onDismiss: () -> Unit, onPay: (Long, Boolean) -> Unit) {
+    var amount by remember { mutableStateOf(st.balance.toString()) }
+    var leave by remember { mutableStateOf(st.inClub) }
+    val value = amount.toLongOrNull() ?: 0
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surface) {
+        Column(Modifier.navigationBarsPadding().padding(horizontal = 24.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text(Credits.format(value), fontSize = 44.sp, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (st.todayUnpaid in 1 until st.balance) QuickAmount("Dnešek", Modifier.weight(1f)) { amount = st.todayUnpaid.toString() }
+                QuickAmount("Vše", Modifier.weight(1f)) { amount = st.balance.toString() }
+            }
+            Keypad(Modifier.fillMaxWidth(),
+                onDigit = { d -> amount = (if (amount == "0") "" else amount) + d },
+                onBack = { amount = amount.dropLast(1) },
+                onClear = { amount = "" })
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { leave = !leave }) {
+                Checkbox(leave, { leave = it }); Text("Odchází")
+            }
+            Button(onClick = { onPay(value, leave) }, enabled = value > 0,
+                colors = ButtonDefaults.buttonColors(containerColor = KlubColors.PaidToday),
+                shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().height(60.dp)) {
+                Text("Zaplatit", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            }
         }
     }
 }
 
 @Composable
-private fun PayDialog(st: MemberStatus, onDismiss: () -> Unit, onPay: (Long, Boolean) -> Unit) {
-    var text by remember { mutableStateOf(st.balance.toString()) }
-    var leave by remember { mutableStateOf(st.inClub) }
-    val amount = text.toLongOrNull()
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Platba") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Na účtu: ${Credits.format(st.balance)}")
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (st.todayUnpaid > 0 && st.olderDebt > 0)
-                        OutlinedButton({ text = st.todayUnpaid.toString() }) { Text("Jen dnešek") }
-                    OutlinedButton({ text = st.balance.toString() }) { Text("Vše") }
-                }
-                OutlinedTextField(text, { text = it.filter(Char::isDigit) }, label = { Text("Kredity (1 kr = 1 Kč)") },
-                    singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    textStyle = MaterialTheme.typography.headlineSmall)
-                if (st.inClub) Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(leave, { leave = it }); Text("Odchází z klubu (zavřít účet)")
+private fun QuickAmount(label: String, modifier: Modifier, onClick: () -> Unit) {
+    Box(modifier.height(44.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant)
+        .clickable(onClick = onClick), contentAlignment = Alignment.Center) { Text(label, fontWeight = FontWeight.SemiBold) }
+}
+
+/** POS-style numeric keypad. Long-press ⌫ clears. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun Keypad(modifier: Modifier, onDigit: (String) -> Unit, onBack: () -> Unit, onClear: () -> Unit) {
+    val haptic = LocalHapticFeedback.current
+    val rows = listOf(listOf("1", "2", "3"), listOf("4", "5", "6"), listOf("7", "8", "9"), listOf("00", "0", "⌫"))
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        rows.forEach { r ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                r.forEach { k ->
+                    Box(Modifier.weight(1f).height(56.dp).clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .combinedClickable(
+                            onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); if (k == "⌫") onBack() else onDigit(k) },
+                            onLongClick = if (k == "⌫") ({ onClear() }) else null,
+                        ), contentAlignment = Alignment.Center) {
+                        Text(k, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                    }
                 }
             }
-        },
-        confirmButton = { Button(enabled = amount != null && amount > 0, onClick = { onPay(amount!!, leave) }) { Text("Zaplatit") } },
-        dismissButton = { TextButton(onDismiss) { Text("Zrušit") } },
-    )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HistorySheet(entries: List<LedgerEntry>, onDismiss: () -> Unit, onVoid: (LedgerEntry) -> Unit) {
+    val voided = remember(entries) { entries.mapNotNull { it.voidsEntryId }.toSet() }
+    val df = remember { SimpleDateFormat("d.M. HH:mm", Locale("cs", "CZ")) }
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surface) {
+        Text("Historie · táhni doleva pro storno", style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+        LazyColumn(Modifier.fillMaxWidth().height(480.dp)) {
+            items(entries.filter { it.voidsEntryId == null }, key = { it.id }) { e ->
+                val isVoided = e.id in voided
+                val row: @Composable () -> Unit = {
+                    Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(horizontal = 20.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(e.description + if (e.quantity != 1.0) " ×${fmtQty(e.quantity)}" else "",
+                                textDecoration = if (isVoided) TextDecoration.LineThrough else null,
+                                color = if (isVoided) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
+                            Text(df.format(Date(e.createdAt)), style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text(if (e.amount < 0) "−${-e.amount}" else "${e.amount}", fontWeight = FontWeight.SemiBold,
+                            color = if (e.type == EntryType.PAYMENT) KlubColors.PaidToday else MaterialTheme.colorScheme.onSurface)
+                    }
+                }
+                if (isVoided) row() else SwipeRow(end = SwipeAction(Icons.Default.Undo, "Storno", KlubColors.OldDebt) { onVoid(e) }) { row() }
+            }
+        }
+    }
 }
 
 @Composable
@@ -332,12 +493,12 @@ private fun CustomItemDialog(onDismiss: () -> Unit, onAdd: (String, Long) -> Uni
     var price by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Vlastní položka") },
+        title = { Text(if (price.isEmpty()) "Částka" else Credits.format(price.toLong()), fontWeight = FontWeight.Bold) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(desc, { desc = it }, label = { Text("Popis") }, singleLine = true)
-                OutlinedTextField(price, { price = it.filter(Char::isDigit) }, label = { Text("Cena (kr)") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Keypad(Modifier.fillMaxWidth(), onDigit = { if (price.length < 7) price = (price + it).trimStart('0') },
+                    onBack = { price = price.dropLast(1) }, onClear = { price = "" })
+                OutlinedTextField(desc, { desc = it }, placeholder = { Text("Popis (nepovinné)") }, singleLine = true)
             }
         },
         confirmButton = { TextButton(enabled = (price.toLongOrNull() ?: 0) > 0, onClick = { onAdd(desc, price.toLong()) }) { Text("Zapsat") } },
@@ -347,25 +508,33 @@ private fun CustomItemDialog(onDismiss: () -> Unit, onAdd: (String, Long) -> Uni
 
 @Composable
 private fun QtyPriceDialog(p: Product, onDismiss: () -> Unit, onConfirm: (Double, Long) -> Unit) {
-    var qty by remember { mutableStateOf("1") }
+    var qty by remember { mutableStateOf(1) }
     var price by remember { mutableStateOf(p.price.toString()) }
-    val q = qty.replace(',', '.').toDoubleOrNull()
     val pr = price.toLongOrNull()
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(p.name) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(qty, { qty = it }, label = { Text("Množství") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
-                OutlinedTextField(price, { price = it.filter(Char::isDigit) }, label = { Text("Cena za kus (kr)") }, singleLine = true,
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                    StepButton("−") { if (qty > 1) qty-- }
+                    Text("$qty", fontSize = 40.sp, fontWeight = FontWeight.Bold)
+                    StepButton("+") { qty++ }
+                }
+                OutlinedTextField(price, { price = it.filter(Char::isDigit) }, label = { Text("Cena / ks") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-                if (q != null && pr != null) Text("Celkem ${Credits.format(Math.round(q * pr))}", fontWeight = FontWeight.Bold)
+                if (pr != null) Text("= ${Credits.format(pr * qty)}", fontWeight = FontWeight.Bold)
             }
         },
-        confirmButton = { TextButton(enabled = q != null && q > 0 && pr != null, onClick = { onConfirm(q!!, pr!!) }) { Text("Zapsat") } },
+        confirmButton = { TextButton(enabled = pr != null, onClick = { onConfirm(qty.toDouble(), pr!!) }) { Text("Zapsat") } },
         dismissButton = { TextButton(onDismiss) { Text("Zrušit") } },
     )
+}
+
+@Composable
+private fun StepButton(label: String, onClick: () -> Unit) {
+    Box(Modifier.size(56.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center) { Text(label, fontSize = 28.sp, fontWeight = FontWeight.Bold) }
 }
 
 @Composable

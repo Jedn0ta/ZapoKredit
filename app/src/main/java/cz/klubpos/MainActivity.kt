@@ -88,20 +88,20 @@ private fun AppNav() {
     }
 
     // Phone: bottom bar. Tablet (>= 600dp wide): side rail – more room for the medallion grid.
+    // The order screen is a full-screen workspace – no navigation chrome.
+    val chrome = current?.startsWith("member/") != true
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        if (maxWidth >= 600.dp) {
-            Row(Modifier.fillMaxSize()) {
-                NavigationRail {
-                    Dest.entries.forEach { d ->
-                        NavigationRailItem(current == d.route, { go(d) }, icon = { Icon(d.icon, d.label) }, label = { Text(d.label) })
-                    }
+        val wide = maxWidth >= 600.dp
+        // Single, stable tree: NavHost always in the same place, bars just appear/disappear.
+        Row(Modifier.fillMaxSize()) {
+            if (wide && chrome) NavigationRail {
+                Dest.entries.forEach { d ->
+                    NavigationRailItem(current == d.route, { go(d) }, icon = { Icon(d.icon, d.label) }, label = { Text(d.label) })
                 }
-                host(Modifier.weight(1f))
             }
-        } else {
-            Column(Modifier.fillMaxSize()) {
+            Column(Modifier.weight(1f).fillMaxSize()) {
                 host(Modifier.weight(1f))
-                NavigationBar {
+                if (!wide && chrome) NavigationBar {
                     Dest.entries.forEach { d ->
                         NavigationBarItem(current == d.route, { go(d) }, icon = { Icon(d.icon, d.label) }, label = { Text(d.label) })
                     }

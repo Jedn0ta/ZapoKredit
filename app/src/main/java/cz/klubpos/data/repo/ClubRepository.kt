@@ -176,6 +176,14 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
         added
     }
 
+    /** Put a product on the shopping list (no-op if it is already there). Returns false if it was already listed. */
+    suspend fun addProductToShopping(productId: Long): Boolean {
+        val p = db.products().get(productId) ?: return false
+        if (db.shopping().openForProduct(p.id) != null) return false
+        db.shopping().insert(ShoppingItem(productId = p.id, name = p.name, quantity = suggestedQty(p), unit = p.unit))
+        return true
+    }
+
     suspend fun addShoppingItem(name: String, qty: Double, unit: String) =
         db.shopping().insert(ShoppingItem(name = name.trim(), quantity = qty, unit = unit))
 
