@@ -206,11 +206,12 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
     /** "Budiž": write the order to the tab and go back to the members. */
     fun futro() = scope.launch { haptic.performHapticFeedback(HapticFeedbackType.LongPress); commitCart(); onBack() }
     fun pay() = scope.launch { commitCart(); showPay = true }
-    /** "Na futro": write to the tab, stay on this member. */
-    fun futroStay() = scope.launch {
-        val total = cartTotal
-        haptic.performHapticFeedback(HapticFeedbackType.LongPress); commitCart()
-        snackbar.currentSnackbarData?.dismiss(); snackbar.showSnackbar("Připsáno na účet ${Credits.format(total)}")
+    /** "Na futro": write the order as debt, the member leaves the club (visit closed), back to members. */
+    fun futroLeave() = scope.launch {
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        commitCart()
+        repo.closeVisit(memberId)
+        onBack()
     }
     fun voidWithUndo(entryId: Long, label: String) = scope.launch {
         repo.void(entryId)
@@ -244,7 +245,7 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
     }
     val bar: @Composable (Boolean) -> Unit = { expanded ->
         OrderBar(st, cartTotal, cart.sumOf { it.qty }, expanded,
-            onPay = { pay() }, onFutro = { futroStay() }, onBudiz = { futro() }, onOpen = { showReceiptSheet = true })
+            onPay = { pay() }, onFutro = { futroLeave() }, onBudiz = { futro() }, onOpen = { showReceiptSheet = true })
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -551,8 +552,8 @@ private fun Receipt(
 /**
  * Bottom bar:
  *  Zaplatit – write the order, then pay
- *  Na futro – write the order to the tab and stay (keep ordering)
- *  Budiž    – write the order and go back to the members
+ *  Na futro – write the order as debt, member leaves the club, back to members
+ *  Budiž    – write the order, member stays in the club, back to members
  */
 @Composable
 private fun OrderBar(
@@ -561,6 +562,7 @@ private fun OrderBar(
 ) {
     val hasCart = cartQty > 0
     val canPay = hasCart || (st?.balance ?: 0) > 0
+    val canFutro = hasCart || st?.inClub == true
     Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(12.dp)
         .then(if (expanded) Modifier else Modifier.glass(RoundedCornerShape(26.dp))).padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -575,7 +577,7 @@ private fun OrderBar(
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             BarButton("Zaplatit", Modifier.weight(1f).tourTarget("pay_button"), canPay, KlubColors.PaidToday, filled = false, onClick = onPay)
-            BarButton("Na futro", Modifier.weight(1f).tourTarget("futro_button"), hasCart, KlubColors.Gold, filled = false, onClick = onFutro)
+            BarButton("Na futro", Modifier.weight(1f).tourTarget("futro_button"), canFutro, KlubColors.OpenTab, filled = false, onClick = onFutro)
             BarButton("Budiž", Modifier.weight(1.2f).tourTarget("budiz_button"), true, KlubColors.Gold, filled = true, onClick = onBudiz)
         }
     }
