@@ -203,7 +203,7 @@ private fun ProductDialog(p: Product, onDismiss: () -> Unit, onImage: () -> Unit
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(name, { name = it }, label = { Text("Název") }, singleLine = true)
                 OutlinedTextField(category, { category = it }, label = { Text("Kategorie") }, singleLine = true)
-                OutlinedTextField(price, { price = it.filter(Char::isDigit) }, label = { Text("Cena (kr)") }, singleLine = true,
+                OutlinedTextField(price, { price = it.filter(Char::isDigit) }, label = { Text("Cena (${cz.klubpos.domain.Credits.SYMBOL})") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Switch(draught, { draught = it; if (it) track = false }); Spacer(Modifier.width(8.dp)); Text("Čepuje se ze sudu")
@@ -230,7 +230,7 @@ private fun ProductDialog(p: Product, onDismiss: () -> Unit, onImage: () -> Unit
                     Switch(promoOn, { promoOn = it }); Spacer(Modifier.width(8.dp)); Text("Akční cena (happy hour)")
                 }
                 if (promoOn) {
-                    OutlinedTextField(promoPrice, { promoPrice = it.filter(Char::isDigit) }, label = { Text("Akční cena (kr)") }, singleLine = true,
+                    OutlinedTextField(promoPrice, { promoPrice = it.filter(Char::isDigit) }, label = { Text("Akční cena (${cz.klubpos.domain.Credits.SYMBOL})") }, singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         listOf("Po", "Út", "St", "Čt", "Pá", "So", "Ne").forEachIndexed { i, d ->
@@ -252,7 +252,7 @@ private fun ProductDialog(p: Product, onDismiss: () -> Unit, onImage: () -> Unit
                     Switch(saleOn, { saleOn = it }); Spacer(Modifier.width(8.dp)); Text("Akční cena (delší doba / do vyprodání)")
                 }
                 if (saleOn) {
-                    OutlinedTextField(salePrice, { salePrice = it.filter(Char::isDigit) }, label = { Text("Akční cena (kr)") }, singleLine = true,
+                    OutlinedTextField(salePrice, { salePrice = it.filter(Char::isDigit) }, label = { Text("Akční cena (${cz.klubpos.domain.Credits.SYMBOL})") }, singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(saleFrom, { saleFrom = it }, label = { Text("Od (d.m.rrrr)") }, singleLine = true,

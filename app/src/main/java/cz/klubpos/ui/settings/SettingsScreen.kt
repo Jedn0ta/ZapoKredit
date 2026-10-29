@@ -189,7 +189,7 @@ fun SettingsScreen(onStartTour: () -> Unit = {}) {
                         })
                     OutlinedTextField(club, { club = it }, label = { Text("Název klubu (zpráva pro příjemce)") }, singleLine = true,
                         modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(limit, { limit = it.filter(Char::isDigit) }, label = { Text("Limit dluhu (kr, prázdné = bez limitu)") },
+                    OutlinedTextField(limit, { limit = it.filter(Char::isDigit) }, label = { Text("Limit dluhu (${cz.klubpos.domain.Credits.SYMBOL}, prázdné = bez limitu)") },
                         singleLine = true, modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
                     Row(verticalAlignment = Alignment.CenterVertically) {

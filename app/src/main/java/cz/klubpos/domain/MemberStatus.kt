@@ -99,6 +99,8 @@ data class MemberStatus(
 
 object Credits {
     private val fmt = NumberFormat.getIntegerInstance(Locale("cs", "CZ"))
-    /** 1 credit = 1 Kč. Shown as "1 250 kr". */
-    fun format(v: Long): String = fmt.format(v) + " kr"
+    /** The club's credit symbol (custom glyph in the app fonts at U+E000). 1 credit = 1 Kč. */
+    const val SYMBOL = "\uE000"
+    /** Shown as "1 250 <symbol>". */
+    fun format(v: Long): String = fmt.format(v) + "\u00A0" + SYMBOL
 }

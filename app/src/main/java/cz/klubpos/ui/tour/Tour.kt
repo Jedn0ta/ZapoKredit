@@ -74,7 +74,7 @@ data class TourStep(
 /** All functions of the app, in the order a new bartender needs them. */
 val TOUR_STEPS = listOf(
     TourStep(TourScreen.MEMBERS, null, "Vítej v ZapoKreditu",
-        "Pokladna pro klub. Vše se počítá v kreditech, 1 kr = 1 Kč. Průvodce ti ukáže všechny funkce přímo v aplikaci."),
+        "Pokladna pro klub. Vše se počítá v kreditech, 1 ${cz.klubpos.domain.Credits.SYMBOL} = 1 Kč. Průvodce ti ukáže všechny funkce přímo v aplikaci."),
     TourStep(TourScreen.MEMBERS, "member_tile", "Členové",
         "Každý člen má dlaždici. Modrý rámeček = je v klubu. Číslo vpravo nahoře: oranžová = dnešní útrata, červená = dluh z minula, zelená ✓ = dnes zaplaceno.\nKlepnutím otevřeš jeho účet.",
         Gesture.TAP),

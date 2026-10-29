@@ -87,7 +87,7 @@ fun HappyHourStrip(modifier: Modifier = Modifier) {
 private fun PriceChip(name: String, price: Long, old: Long, note: String, ink: androidx.compose.ui.graphics.Color) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(name, color = ink, fontWeight = FontWeight.SemiBold)
-        Text("$price kr", color = ink, fontWeight = FontWeight.ExtraBold)
+        Text("$price\u00A0${cz.klubpos.domain.Credits.SYMBOL}", color = ink, fontWeight = FontWeight.ExtraBold)
         Text("$old", color = ink.copy(alpha = 0.6f), textDecoration = TextDecoration.LineThrough, style = MaterialTheme.typography.bodySmall)
         if (note.isNotEmpty()) Text(note, color = ink.copy(alpha = 0.75f), style = MaterialTheme.typography.bodySmall)
     }

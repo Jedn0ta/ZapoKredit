@@ -224,10 +224,10 @@ fun headlineColor(h: Headline): Color = when (h) {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected: Boolean = false, newbie: Boolean = false,
-    compact: Boolean = false, onClick: () -> Unit) {
+    compact: Boolean = false, horizontal: Boolean = false, onClick: () -> Unit) {
     val shape = RoundedCornerShape(24.dp)
     Box(
-        modifier.fillMaxWidth().aspectRatio(0.82f)
+        modifier.fillMaxWidth().aspectRatio(if (horizontal) 2.3f else 0.82f)
             // Elder (platinum) outranks VIP (gold): platinum outside, gold just inside when both
             .then(if (m.elder) Modifier.platinumFrame(shape) else Modifier)
             .then(if (m.vip) Modifier.padding(if (m.elder) 5.dp else 0.dp).goldFrame(if (m.elder) RoundedCornerShape(20.dp) else shape) else Modifier)
@@ -241,6 +241,23 @@ private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected:
             })
             .clickable(onClick = onClick)
     ) {
+        if (horizontal) {
+            // Tablet: picture on the left, big centred name, amount top-right
+            Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(
+                (tileTint(m.tileColor) ?: KlubColors.SurfaceHigh).copy(alpha = 0.35f), KlubColors.Surface.copy(alpha = 0.9f)))))
+            Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                MemberAvatar(m.photoId, m.avatar, m.name, tileTint(m.tileColor),
+                    Modifier.fillMaxHeight().aspectRatio(1f), textSize = if (compact) 26 else 36)
+                Column(Modifier.weight(1f).padding(horizontal = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(m.nickname ?: m.name, color = Color.White, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        style = (if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.headlineSmall)
+                            .copy(fontWeight = FontWeight.Bold),
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    if (m.inClub) Text("v klubu", color = KlubColors.InClub, style = MaterialTheme.typography.labelMedium)
+                }
+            }
+            if (!m.inClub) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)))
+        } else {
         MemberAvatar(m.photoId, m.avatar, m.name, tileTint(m.tileColor), Modifier.fillMaxSize(), textSize = if (compact) 30 else 44)
         // Glass tint of the member's colour
         tileTint(m.tileColor)?.let { t ->
@@ -258,6 +275,7 @@ private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected:
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (m.inClub) Text("v klubu", color = KlubColors.InClub, style = MaterialTheme.typography.labelSmall)
             }
+        }
         }
         AmountBadge(m, Modifier.align(Alignment.TopEnd).padding(8.dp))
         Column(Modifier.align(Alignment.TopStart).padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -394,6 +412,9 @@ private fun MemberGrid(
     val local = remember { androidx.compose.runtime.mutableStateListOf<MemberStatus>() }
     LaunchedEffect(members) { if (reorder.draggingKey == null) { local.clear(); local.addAll(members) } }
     val gap = (tileDp / 11).coerceIn(8, 14).dp
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+    // Tablet (wide): horizontal tiles – picture left, big name in the middle
+    val horizontal = maxWidth >= 600.dp
     LazyVerticalGrid(
         state = gridState,
         modifier = Modifier.fillMaxSize().reorderableGrid(reorder,
@@ -404,15 +425,16 @@ private fun MemberGrid(
             },
             onDrop = { onSaveOrder(local.map { it.memberId }) },
             onLongPress = { key -> local.firstOrNull { it.memberId == key }?.let(onActions) }),
-        columns = GridCells.Adaptive(tileDp.dp),
+        columns = GridCells.Adaptive(if (horizontal) (tileDp * 2).dp else tileDp.dp),
         contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
         horizontalArrangement = Arrangement.spacedBy(gap),
         verticalArrangement = Arrangement.spacedBy(gap),
     ) {
         itemsIndexed(local, key = { _, m -> m.memberId }) { i, m ->
-            MemberTile(m, newbie = m.isNewbie(newbieDays), compact = tileDp < 120,
+            MemberTile(m, newbie = m.isNewbie(newbieDays), compact = tileDp < 120, horizontal = horizontal,
                 modifier = (if (i == 0 && tourFirst) Modifier.tourTarget("member_tile") else Modifier).reorderItem(reorder, m.memberId),
                 onClick = { onOpen(m.memberId) })
         }
+    }
     }
 }

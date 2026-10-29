@@ -97,7 +97,7 @@ private fun AddDraughtDialog(onDismiss: () -> Unit, onAdd: (String, Double, Long
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(15.0, 30.0, 50.0).forEach { s -> FilterChip(size == s, { size = s }, label = { Text("${s.toInt()} l") }) }
                 }
-                OutlinedTextField(big, { big = it.filter(Char::isDigit) }, label = { Text("Cena velkého 0,5 l (kr)") }, singleLine = true, keyboardOptions = num)
+                OutlinedTextField(big, { big = it.filter(Char::isDigit) }, label = { Text("Cena velkého 0,5 l (${cz.klubpos.domain.Credits.SYMBOL})") }, singleLine = true, keyboardOptions = num)
                 OutlinedTextField(small, { small = it.filter(Char::isDigit) }, label = { Text("Cena malého 0,3 l (prázdné = nečepuje se)") }, singleLine = true, keyboardOptions = num)
             }
         },
