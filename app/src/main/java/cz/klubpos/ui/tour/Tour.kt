@@ -101,7 +101,7 @@ val TOUR_STEPS = listOf(
         "Táhni doprava = ještě jeden kus. Podržením řádku ho přesuneš na účet jiného člena.", Gesture.SWIPE_RIGHT),
     TourStep(TourScreen.MEMBER, "pay_button", "Placení",
         "Zaplatí dnešek, méně (zadáš na klávesnici) nebo celý dluh. Hotově (spočítá, kolik vrátit) nebo QR kódem do banky.",
-        Gesture.HOLD),
+        Gesture.TAP),
     TourStep(TourScreen.MEMBER, "history", "Historie", "Vpravo nahoře je dnešní útrata a celkový dluh. Klepnutím otevřeš historii – co a kdy. Starší záznam stornuješ tažením doleva."),
 
     TourStep(TourScreen.INVENTORY, "stock_row", "Sklad",
