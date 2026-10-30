@@ -37,6 +37,7 @@ import androidx.compose.ui.layout.boundsInRoot
 import cz.klubpos.ui.components.reorderableGrid
 import cz.klubpos.ui.components.reorderItem
 import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.filled.Handyman
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import cz.klubpos.ui.theme.glass
@@ -125,6 +126,8 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
     var filter by remember { mutableStateOf(Filter.ALL) }
     var query by remember { mutableStateOf("") }
     var showAdd by remember { mutableStateOf(false) }
+    var showTools by remember { mutableStateOf(false) }
+    if (showTools) cz.klubpos.ui.tools.ToolsDialog(onDismiss = { showTools = false })
     var actionsFor by remember { mutableStateOf<MemberStatus?>(null) }
     var photoFor by remember { mutableStateOf<MemberStatus?>(null) }
     var payAllFor by remember { mutableStateOf<MemberStatus?>(null) }
@@ -151,6 +154,9 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SearchField(query, { query = it }, Modifier.weight(1f).tourTarget("search"))
             Segmented(Filter.entries.map { it.label }, filter.ordinal) { filter = Filter.entries[it] }
+            Box(Modifier.size(48.dp).glass(RoundedCornerShape(16.dp)).clickable { showTools = true }, contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.Handyman, "Nástroje", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
         // Happy hour (only while a promo runs)
         cz.klubpos.ui.components.HappyHourStrip(Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
@@ -177,7 +183,7 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
                         userScrollEnabled = tilesLocked) { page ->
                         MemberGrid(
                             members = members.filter { it.page.coerceIn(0, pages.lastIndex) == page },
-                            tileDp = cfg.memberTileDp, newbieDays = cfg.newbieDays, canReorder = !tilesLocked, debts = debts,
+                            tileDp = cfg.memberTileDp, newbieDays = cfg.newbieDays, canReorder = !tilesLocked,
                             tourFirst = page == 0,
                             onOpen = onOpenMember, onActions = { actionsFor = it },
                             onSaveOrder = { ids -> scope.launch { repo.saveMemberOrder(ids) } },
@@ -192,7 +198,7 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
                     }
                 }
             } else {
-                MemberGrid(shown, cfg.memberTileDp, cfg.newbieDays, canReorder = false, tourFirst = true, debts = debts,
+                MemberGrid(shown, cfg.memberTileDp, cfg.newbieDays, canReorder = false, tourFirst = true, debts = if (filter == Filter.DEBT) debts else emptyMap(),
                     onOpen = onOpenMember, onActions = { actionsFor = it }, onSaveOrder = {})
             }
             Box(Modifier.align(Alignment.BottomEnd).padding(20.dp).size(60.dp)
@@ -313,7 +319,7 @@ private fun MemberTile(m: MemberStatus, since: Long? = null, modifier: Modifier 
             }
         }
         }
-        AmountBadge(m, since, Modifier.align(Alignment.TopEnd).padding(8.dp))
+        if (m.todayUnpaid > 0) Pill(Credits.format(m.todayUnpaid), KlubColors.OpenTab, Modifier.align(Alignment.TopEnd).padding(8.dp))
         // Přítomní = green dot, was here today but left = grey dot
         if (m.inClub || m.visitedToday) {
             val c = if (m.inClub) KlubColors.PaidToday else Color(0xFF8A8794)
@@ -323,6 +329,11 @@ private fun MemberTile(m: MemberStatus, since: Long? = null, modifier: Modifier 
         }
         holdRing?.invoke(this)
         Column(Modifier.align(Alignment.TopStart).padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            // debt from earlier days on the left (date only in the "Dluh" view), today's tab on the right
+            if (m.olderDebt > 0) Pill(Credits.format(m.olderDebt), KlubColors.OldDebt)
+            if (m.olderDebt > 0 && since != null) Text("od " + java.text.SimpleDateFormat("d. M.", java.util.Locale("cs", "CZ")).format(java.util.Date(since)),
+                Modifier.clip(RoundedCornerShape(6.dp)).background(Color.Black.copy(alpha = 0.55f)).padding(horizontal = 6.dp, vertical = 1.dp),
+                color = Color.White, style = MaterialTheme.typography.labelSmall)
             if (newbie) Text("NOVÁČEK", Modifier.clip(RoundedCornerShape(8.dp))
                 .background(Brush.linearGradient(listOf(KlubColors.PaidToday, Color(0xFF2BB673)))).padding(horizontal = 7.dp, vertical = 3.dp),
                 color = KlubColors.Ink, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold))
@@ -348,8 +359,8 @@ private fun AmountBadge(m: MemberStatus, since: Long?, modifier: Modifier) {
 }
 
 @Composable
-private fun Pill(text: String, color: Color) {
-    Text(text, Modifier.shadow(12.dp, RoundedCornerShape(12.dp), ambientColor = color, spotColor = color)
+private fun Pill(text: String, color: Color, modifier: Modifier = Modifier) {
+    Text(text, modifier.shadow(12.dp, RoundedCornerShape(12.dp), ambientColor = color, spotColor = color)
         .clip(RoundedCornerShape(12.dp)).background(Brush.linearGradient(listOf(color, color.copy(alpha = 0.75f))))
         .padding(horizontal = 10.dp, vertical = 4.dp),
         color = KlubColors.Ink, style = MaterialTheme.typography.labelLarge.copy(fontFamily = Grotesk, fontWeight = FontWeight.Bold, fontSize = 15.sp))
