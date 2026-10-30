@@ -113,10 +113,47 @@ fun DrinkMenuScreen() {
     var showIo by remember { mutableStateOf(false) }
     var advanced by remember { mutableStateOf<Product?>(null) }
     val now = rememberMinuteClock()
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { ctx.getSharedPreferences("menu_layout", android.content.Context.MODE_PRIVATE) }
+    var cols by remember { mutableStateOf(prefs.getInt("cols", 2).coerceIn(1, 3)) }
+    var scale by remember { mutableStateOf(prefs.getFloat("scale", 1f)) }
+    var layoutRaw by remember { mutableStateOf(prefs.getString("layout$cols", "") ?: "") }
+    LaunchedEffect(cols) { layoutRaw = prefs.getString("layout$cols", "") ?: "" }
+    // column lists of section codes, every Kind placed exactly once
+    val layout: List<List<Kind>> = remember(cols, layoutRaw) {
+        val parsed = layoutRaw.split("|").map { c -> c.split(",").mapNotNull { code -> Kind.entries.firstOrNull { it.code == code } } }
+        val res = List(cols) { i -> parsed.getOrNull(i).orEmpty().toMutableList() }
+        // extra stored columns (when there were more) fold into the last one
+        parsed.drop(cols).flatten().forEach { res.last().add(it) }
+        Kind.entries.filter { k -> res.none { k in it } }.forEach { k -> res.minBy { it.size }.add(k) }
+        res.map { it.distinct() }
+    }
+    fun saveLayout(l: List<List<Kind>>) {
+        layoutRaw = l.joinToString("|") { c -> c.joinToString(",") { it.code } }
+        prefs.edit().putString("layout$cols", layoutRaw).apply()
+    }
+    fun move(k: Kind, dCol: Int, dRow: Int) {
+        val l = layout.map { it.toMutableList() }
+        val c = l.indexOfFirst { k in it }; val r = l[c].indexOf(k)
+        if (dCol != 0) { val nc = (c + dCol).coerceIn(0, l.lastIndex); if (nc == c) return; l[c].removeAt(r); l[nc].add(r.coerceAtMost(l[nc].size), k) }
+        else { val nr = r + dRow; if (nr !in l[c].indices) return; l[c].removeAt(r); l[c].add(nr, k) }
+        saveLayout(l)
+    }
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(24.dp, 14.dp, 12.dp, 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Nápojový lístek", Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall)
+            Text("Nápojový lístek", Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // columns 1/2/3
+            (1..3).forEach { n ->
+                Text("$n", Modifier.clip(RoundedCornerShape(8.dp)).clickable { cols = n; prefs.edit().putInt("cols", n).apply() }
+                    .padding(horizontal = 9.dp, vertical = 6.dp), fontWeight = if (cols == n) FontWeight.Bold else null,
+                    color = if (cols == n) KlubColors.Gold else KlubColors.Muted)
+            }
+            Spacer(Modifier.width(6.dp))
+            Text("A−", Modifier.clip(RoundedCornerShape(8.dp)).clickable { scale = (scale - 0.1f).coerceAtLeast(0.7f); prefs.edit().putFloat("scale", scale).apply() }
+                .padding(horizontal = 8.dp, vertical = 6.dp), fontSize = 13.sp, color = KlubColors.Muted)
+            Text("A+", Modifier.clip(RoundedCornerShape(8.dp)).clickable { scale = (scale + 0.1f).coerceAtMost(1.8f); prefs.edit().putFloat("scale", scale).apply() }
+                .padding(horizontal = 8.dp, vertical = 6.dp), fontSize = 17.sp, color = KlubColors.Muted)
             if (editing) IconButton({ showIo = true }) { Icon(Icons.Default.UploadFile, "Import / vzor z Excelu", tint = KlubColors.Muted) }
             TextButton({ if (editing) { editing = false; open = null } else if (unlocked) editing = true else askUnlock = true },
                 Modifier.tourTarget("menu_edit")) {
@@ -130,17 +167,28 @@ fun DrinkMenuScreen() {
         if (sections.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("Lístek je prázdný. Klepni na Upravit.", color = KlubColors.Muted)
         }
-        LazyVerticalStaggeredGrid(
-            columns = StaggeredGridCells.Adaptive(420.dp),
-            contentPadding = PaddingValues(24.dp, 4.dp, 24.dp, 96.dp),
-            horizontalArrangement = Arrangement.spacedBy(40.dp),
-            verticalItemSpacing = 22.dp,
-        ) {
-            items(sections, key = { it.code }) { k ->
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides
+            androidx.compose.ui.unit.Density(density.density, density.fontScale * scale)) {
+        Row(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp, 4.dp, 24.dp, 96.dp),
+            horizontalArrangement = Arrangement.spacedBy(36.dp)) {
+          layout.forEachIndexed { ci, column ->
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(22.dp)) {
+              column.filter { it in sections }.forEach { k ->
                 val drinks = menu[k].orEmpty().filter { d -> editing || d.servings.any { it.price > 0 } }
                 Column(Modifier.fillMaxWidth()) {
-                    Text(k.label.uppercase(), style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.sp, fontWeight = FontWeight.Bold),
-                        color = KlubColors.Gold)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(k.label.uppercase(), Modifier.weight(1f), style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.sp, fontWeight = FontWeight.Bold),
+                            color = KlubColors.Gold)
+                        if (editing) {
+                            val ri = column.indexOf(k)
+                            listOf(Triple("←", -1, 0) to (ci > 0), Triple("↑", 0, -1) to (ri > 0),
+                                Triple("↓", 0, 1) to (ri < column.lastIndex), Triple("→", 1, 0) to (ci < layout.lastIndex)).forEach { (t, en) ->
+                                Text(t.first, Modifier.clip(RoundedCornerShape(6.dp)).clickable(enabled = en) { move(k, t.second, t.third) }
+                                    .padding(horizontal = 7.dp, vertical = 2.dp), color = if (en) KlubColors.Muted else KlubColors.Muted.copy(alpha = 0.25f))
+                            }
+                        }
+                    }
                     HorizontalDivider(Modifier.padding(top = 4.dp, bottom = 6.dp), color = KlubColors.Gold.copy(alpha = 0.35f))
                     drinks.forEach { d ->
                         val key = "${k.code}|${d.name}"
@@ -154,7 +202,10 @@ fun DrinkMenuScreen() {
                             .padding(vertical = 8.dp, horizontal = 2.dp), color = KlubColors.Muted, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
+              }
             }
+          }
+        }
         }
     }
 
