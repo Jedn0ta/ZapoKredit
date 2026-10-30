@@ -112,6 +112,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.heightIn
 import cz.klubpos.domain.kindEnum
 import java.text.SimpleDateFormat
@@ -187,7 +189,18 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
     val settings by rememberSettings().flow.collectAsState()
     // Favourites = what THIS member orders most often.
     val top by remember(memberId) { repo.memberFavorites(memberId) }.collectAsState(initial = emptyList())
-    val favorites = remember(top, products) { top.mapNotNull { t -> products.firstOrNull { it.id == t.productId } } }
+    val mprefs = cz.klubpos.ui.components.rememberMemberPrefs()
+    val allPrefs by mprefs.flow.collectAsState()
+    val myPrefs = allPrefs[memberId] ?: cz.klubpos.core.MemberPrefs()
+    // own favourite list from member settings, otherwise what he orders most
+    val favorites = remember(top, products, myPrefs) {
+        if (myPrefs.favorites.isNotEmpty()) myPrefs.favorites.mapNotNull { id -> products.firstOrNull { it.id == id } }
+        else top.mapNotNull { t -> products.firstOrNull { it.id == t.productId } }
+    }
+    val combos = remember(myPrefs, products) {
+        myPrefs.combos.map { c -> c to c.items.mapNotNull { (id, q) -> products.firstOrNull { it.id == id }?.let { it to q } } }
+            .filter { it.second.isNotEmpty() }
+    }
     var lastLabel by remember { mutableStateOf<String?>(null) }
     androidx.compose.runtime.LaunchedEffect(ledger) { lastLabel = repo.lastChargeLabel(memberId) }
 
@@ -250,6 +263,7 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
 
     val receipt: @Composable (Modifier, Boolean) -> Unit = { mod, cartOnly ->
         Receipt(st, cart, lines, payments, mod, lastLabel, cartOnly, onRepeat = { repeat() }, onPayNow = { payNow() },
+            combos = combos, onCombo = { items -> items.forEach { (p, q) -> addToCart(p, q) } },
             onCartPlus = { l -> addToCart(l.product, 1.0, l.unitPrice, l.desc) },
             onCartMinus = { l -> removeOne(l) },
             onCartLong = { l -> cartMenu = l },
@@ -541,6 +555,7 @@ private fun ProductKey(p: Product, count: Double, promo: Boolean = false, modifi
 private fun Receipt(
     st: MemberStatus?, cart: List<CartLine>, lines: List<ReceiptLine>, payments: List<LedgerEntry>, modifier: Modifier,
     lastLabel: String?, cartOnly: Boolean, onRepeat: () -> Unit, onPayNow: () -> Unit,
+    combos: List<Pair<cz.klubpos.core.Combo, List<Pair<Product, Double>>>>, onCombo: (List<Pair<Product, Double>>) -> Unit,
     onCartPlus: (CartLine) -> Unit, onCartMinus: (CartLine) -> Unit, onCartLong: (CartLine) -> Unit,
     onPlus: (ReceiptLine) -> Unit, onMinus: (ReceiptLine) -> Unit, onLong: (ReceiptLine) -> Unit,
 ) {
@@ -555,9 +570,14 @@ private fun Receipt(
                 if (cart.isNotEmpty()) Text("Zaplatit hned", Modifier.padding(end = 8.dp).clip(RoundedCornerShape(14.dp))
                     .background(KlubColors.PaidToday.copy(alpha = 0.18f)).clickable(onClick = onPayNow).padding(horizontal = 12.dp, vertical = 6.dp),
                     color = KlubColors.PaidToday, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelLarge)
-                if (lastLabel != null) Text("↻ To samé", Modifier.clip(RoundedCornerShape(14.dp)).glass(RoundedCornerShape(14.dp))
-                    .clickable(onClick = onRepeat).padding(horizontal = 12.dp, vertical = 6.dp),
+                if (lastLabel != null) Text("↻ $lastLabel", Modifier.widthIn(max = 170.dp).clip(RoundedCornerShape(14.dp)).glass(RoundedCornerShape(14.dp))
+                    .clickable(onClick = onRepeat).padding(horizontal = 12.dp, vertical = 6.dp), maxLines = 1, overflow = TextOverflow.Ellipsis,
                     fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelLarge)
+            }
+        }
+        if (combos.isNotEmpty()) item {
+            Column(Modifier.padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                combos.forEach { (c, items) -> ComboCard(c.name, items) { onCombo(items) } }
             }
         }
         itemsIndexedList(cart, key = { i, _ -> "cart$i" }) { _, l ->
@@ -774,6 +794,29 @@ private fun TransferSheet(members: List<MemberStatus>, itemName: String, onDismi
                 }
             }
         }
+    }
+}
+
+/** A "Klasika": the drinks drawn as joined chips (pair / trio), total price on the right. Tap = add all. */
+@Composable
+fun ComboCard(name: String, items: List<Pair<Product, Double>>, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).border(1.dp, KlubColors.Gold.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+        .clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(name.uppercase(), style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.5.sp), color = KlubColors.Gold)
+            Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                items.forEachIndexed { i, (p, q) ->
+                    if (i > 0) Box(Modifier.size(18.dp).clip(CircleShape).background(KlubColors.Gold), contentAlignment = Alignment.Center) {
+                        Text("+", color = KlubColors.Ink, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Text((if (q != 1.0) "${fmtQty(q)}× " else "") + p.displayName, Modifier.clip(RoundedCornerShape(10.dp))
+                        .background(KlubColors.SurfaceHigh).padding(horizontal = 8.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                }
+            }
+        }
+        Text("${items.sumOf { (p, q) -> Math.round(p.currentPrice() * q) }}", Modifier.padding(start = 8.dp),
+            style = Display.copy(fontSize = 18.sp), color = KlubColors.Gold)
     }
 }
 

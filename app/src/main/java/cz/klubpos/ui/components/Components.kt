@@ -162,3 +162,6 @@ fun rememberImagePicker(onBytes: suspend (ByteArray) -> Unit): () -> Unit {
     }
     return { launcher.launch("image/*") }
 }
+
+@Composable
+fun rememberMemberPrefs(): cz.klubpos.core.MemberPrefsStore = (LocalContext.current.applicationContext as KlubPosApp).memberPrefs
