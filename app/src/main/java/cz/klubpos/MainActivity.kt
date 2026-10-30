@@ -129,7 +129,11 @@ class MainActivity : ComponentActivity() {
                         if (System.currentTimeMillis() - lastTouch > settings.autoLockMinutes * 60_000L) repo.logout()
                     }
                 }
-                CompositionLocalProvider(LocalTour provides tour) {
+                // No vibrations anywhere in the app
+                val noHaptics = remember { object : androidx.compose.ui.hapticfeedback.HapticFeedback {
+                    override fun performHapticFeedback(hapticFeedbackType: androidx.compose.ui.hapticfeedback.HapticFeedbackType) = Unit
+                } }
+                CompositionLocalProvider(LocalTour provides tour, androidx.compose.ui.platform.LocalHapticFeedback provides noHaptics) {
                   cz.klubpos.ui.components.TiltProvider {
                     AppBackground {
                         // Keep all content clear of the status bar, navigation bar and display cutouts

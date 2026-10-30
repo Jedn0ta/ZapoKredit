@@ -1,6 +1,7 @@
 package cz.klubpos.ui.components
 
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.lazy.grid.LazyGridItemInfo
@@ -88,6 +89,8 @@ fun Modifier.reorderableGrid(
     /** If set: holding still for this long fills a ring and then calls [onLongPress] (instead of on release). */
     holdMillis: Int? = null,
     holdSilentMillis: Int = 500,
+    /** true = the tile moves as soon as the finger moves (no long-press first). */
+    immediate: Boolean = false,
 ): Modifier = composed {
     val haptic = LocalHapticFeedback.current
     val move by rememberUpdatedState(onMove)
@@ -106,7 +109,6 @@ fun Modifier.reorderableGrid(
             val t = ((elapsed - holdSilentMillis).toFloat() / (holdMillis - holdSilentMillis)).coerceAtLeast(0f)
             state.holdProgress = t.coerceIn(0f, 1f)
             if (t >= 1f) {
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 state.holdDone = true; state.holdKey = null; state.holdProgress = 0f
                 press(key); break
             }
@@ -132,21 +134,20 @@ fun Modifier.reorderableGrid(
     }
     then(holdTracker).onGloballyPositioned { state.origin = it.positionInRoot() }.pointerInput(state) {
         val slop = viewConfiguration.touchSlop * 2
-        detectDragGesturesAfterLongPress(
-            onDragStart = { p ->
-                val item = state.grid.itemAt(p) ?: return@detectDragGesturesAfterLongPress
-                if (!can(item.key)) { if (holdMillis == null) press(item.key); return@detectDragGesturesAfterLongPress }
+            val onStart: (Offset) -> Unit = cb@{ p ->
+                val item = state.grid.itemAt(p) ?: return@cb
+                if (!can(item.key)) { if (holdMillis == null) press(item.key); return@cb }
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 state.draggingKey = item.key; state.offset = Offset.Zero; state.moved = false
                 state.pointer = state.origin + p
-            },
-            onDrag = { change, amount ->
-                val key = state.draggingKey ?: return@detectDragGesturesAfterLongPress
+            }
+            val onDragCb: (androidx.compose.ui.input.pointer.PointerInputChange, Offset) -> Unit = cb@{ change, amount ->
+                val key = state.draggingKey ?: return@cb
                 change.consume()
                 state.offset += amount
                 state.pointer = state.pointer?.plus(amount)
                 if (state.offset.getDistance() > slop) { state.moved = true; state.holdKey = null }
-                val cur = state.grid.layoutInfo.visibleItemsInfo.firstOrNull { it.key == key } ?: return@detectDragGesturesAfterLongPress
+                val cur = state.grid.layoutInfo.visibleItemsInfo.firstOrNull { it.key == key } ?: return@cb
                 val center = cur.offset.toOffset() + state.offset + Offset(cur.size.width / 2f, cur.size.height / 2f)
                 val target = state.grid.itemAt(center)
                 if (target != null && target.key != key && can(target.key)) {
@@ -155,8 +156,8 @@ fun Modifier.reorderableGrid(
                     state.offset += cur.offset.toOffset() - target.offset.toOffset()
                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 }
-            },
-            onDragEnd = {
+            }
+            val onEnd: () -> Unit = {
                 val key = state.draggingKey
                 val ptr = state.pointer
                 if (key != null) {
@@ -164,9 +165,10 @@ fun Modifier.reorderableGrid(
                     if (!handled) { if (state.moved) drop() else if (holdMillis == null) press(key) }
                 }
                 state.draggingKey = null; state.offset = Offset.Zero; state.pointer = null
-            },
-            onDragCancel = { state.draggingKey = null; state.offset = Offset.Zero; state.pointer = null },
-        )
+            }
+            val onCancel: () -> Unit = { state.draggingKey = null; state.offset = Offset.Zero; state.pointer = null }
+            if (immediate) detectDragGestures(onDragStart = onStart, onDrag = onDragCb, onDragEnd = onEnd, onDragCancel = onCancel)
+            else detectDragGesturesAfterLongPress(onDragStart = onStart, onDrag = onDragCb, onDragEnd = onEnd, onDragCancel = onCancel)
     }
 }
 
