@@ -170,6 +170,7 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
     val cartCount = remember(cart.toList()) { cart.filter { it.product != null }.groupBy { it.product!!.id }.mapValues { e -> e.value.sumOf { it.qty } } }
 
     var showPay by remember { mutableStateOf(false) }
+    var payPreset by remember { mutableStateOf<Long?>(null) }
     var showCustom by remember { mutableStateOf(false) }
     var showHistory by remember { mutableStateOf(false) }
     var showReceiptSheet by remember { mutableStateOf(false) }
@@ -188,9 +189,11 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
     fun addToCart(p: Product?, qty: Double = 1.0, price: Long? = null, desc: String? = null) {
         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         val unit = price ?: p?.currentPrice() ?: 0
-        val i = cart.indexOfFirst { it.product?.id == p?.id && p != null && it.unitPrice == unit }
+        val name = desc ?: p?.displayName ?: "Vlastní položka"
+        // same thing again (also via "To samé") = only the count goes up
+        val i = cart.indexOfFirst { it.unitPrice == unit && (if (p != null) it.product?.id == p.id else it.product == null && it.desc == name) }
         if (i >= 0) cart[i] = cart[i].copy(qty = cart[i].qty + qty)
-        else cart += CartLine(p, desc ?: p?.displayName ?: "Vlastní položka", unit, qty)
+        else cart += CartLine(p, name, unit, qty)
     }
     /** Set the exact count of a product in the order (0 = remove it). Price always comes from Položky. */
     fun setQty(p: Product, q: Int) {
@@ -209,7 +212,9 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
     }
     /** "Budiž": write the order to the tab and go back to the members. */
     fun futro() = scope.launch { haptic.performHapticFeedback(HapticFeedbackType.LongPress); commitCart(); onBack() }
-    fun pay() = scope.launch { commitCart(); showPay = true }
+    fun pay() = scope.launch { payPreset = null; commitCart(); showPay = true }
+    /** Comes, buys, pays right away: write just this order and pay exactly its amount. */
+    fun payNow() = scope.launch { payPreset = cartTotal; commitCart(); showPay = true }
     /** "Na futro": write the order as debt, the member leaves the club (visit closed), back to members. */
     fun futroLeave() = scope.launch {
         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -230,7 +235,7 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
     fun repeat() = scope.launch {
         repo.lastChargeEntry(memberId)?.let { e ->
             val p = products.firstOrNull { it.id == e.productId }
-            addToCart(p, e.quantity, p?.currentPrice() ?: e.unitPrice, e.description)
+            addToCart(p, e.quantity, p?.currentPrice() ?: e.unitPrice, if (p != null) null else e.description)
         }
     }
 
@@ -239,7 +244,7 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
     val back: () -> Unit = { if (cart.isNotEmpty()) confirmLeave = true else onBack() }
 
     val receipt: @Composable (Modifier, Boolean) -> Unit = { mod, cartOnly ->
-        Receipt(st, cart, lines, payments, mod, lastLabel, cartOnly, onRepeat = { repeat() },
+        Receipt(st, cart, lines, payments, mod, lastLabel, cartOnly, onRepeat = { repeat() }, onPayNow = { payNow() },
             onCartPlus = { l -> addToCart(l.product, 1.0, l.unitPrice, l.desc) },
             onCartMinus = { l -> removeOne(l) },
             onCartLong = { l -> qtyLine = l },
@@ -293,7 +298,7 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
         containerColor = MaterialTheme.colorScheme.surface) {
         receipt(Modifier.fillMaxWidth().height(460.dp), false)
     }
-    if (showPay && st != null) PaySheet(st, member?.nickname ?: member?.name ?: "", settings.account, settings.clubName,
+    if (showPay && st != null) PaySheet(st, member?.nickname ?: member?.name ?: "", settings.account, settings.clubName, payPreset,
         onDismiss = { showPay = false }) { amount, leave, method ->
         scope.launch { repo.pay(memberId, amount, leave, method) }
         showPay = false; onBack()
@@ -498,7 +503,7 @@ private fun ProductKey(p: Product, count: Double, promo: Boolean = false, modifi
 @Composable
 private fun Receipt(
     st: MemberStatus?, cart: List<CartLine>, lines: List<ReceiptLine>, payments: List<LedgerEntry>, modifier: Modifier,
-    lastLabel: String?, cartOnly: Boolean, onRepeat: () -> Unit,
+    lastLabel: String?, cartOnly: Boolean, onRepeat: () -> Unit, onPayNow: () -> Unit,
     onCartPlus: (CartLine) -> Unit, onCartMinus: (CartLine) -> Unit, onCartLong: (CartLine) -> Unit,
     onPlus: (ReceiptLine) -> Unit, onMinus: (ReceiptLine) -> Unit, onLong: (ReceiptLine) -> Unit,
 ) {
@@ -510,6 +515,9 @@ private fun Receipt(
         item {
             Row(Modifier.fillMaxWidth().padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) { header("Nová objednávka", KlubColors.Gold) }
+                if (cart.isNotEmpty()) Text("Zaplatit hned", Modifier.padding(end = 8.dp).clip(RoundedCornerShape(14.dp))
+                    .background(KlubColors.PaidToday.copy(alpha = 0.18f)).clickable(onClick = onPayNow).padding(horizontal = 12.dp, vertical = 6.dp),
+                    color = KlubColors.PaidToday, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelLarge)
                 if (lastLabel != null) Text("↻ To samé", Modifier.clip(RoundedCornerShape(14.dp)).glass(RoundedCornerShape(14.dp))
                     .clickable(onClick = onRepeat).padding(horizontal = 12.dp, vertical = 6.dp),
                     fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelLarge)
@@ -616,14 +624,17 @@ private fun BarButton(label: String, modifier: Modifier, enabled: Boolean, color
 
 @Composable
 private fun PaySheet(
-    st: MemberStatus, memberName: String, account: String, clubName: String,
+    st: MemberStatus, memberName: String, account: String, clubName: String, preset: Long?,
     onDismiss: () -> Unit, onPay: (Long, Boolean, String) -> Unit,
 ) {
     // null = not typed yet → default follows live status (today's spend, or the whole debt).
     var amountText by remember { mutableStateOf<String?>(null) }
-    val defaultAmount = if (st.todayUnpaid > 0) st.todayUnpaid else st.balance.coerceAtLeast(0)
-    val amount = amountText ?: defaultAmount.toString()
-    var leave by remember { mutableStateOf(st.inClub) }
+    // which quick choice is active: ORDER / TODAY / ALL, null = typed by hand
+    var choice by remember { mutableStateOf<String?>(if (preset != null) "ORDER" else if (st.todayUnpaid > 0) "TODAY" else "ALL") }
+    val amount = amountText ?: when (choice) {
+        "ORDER" -> preset ?: 0; "TODAY" -> st.todayUnpaid; else -> st.balance.coerceAtLeast(0)
+    }.toString()
+    var leave by remember { mutableStateOf(st.inClub && preset == null) }
     var method by remember { mutableStateOf("CASH") }
     var received by remember { mutableStateOf<Long?>(null) }   // cash handed over
     var editingReceived by remember { mutableStateOf(false) }
@@ -638,8 +649,9 @@ private fun PaySheet(
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (st.todayUnpaid > 0) QuickAmount("Dnešek ${st.todayUnpaid}", Modifier.weight(1f)) { amountText = st.todayUnpaid.toString(); received = null }
-                if (st.balance > st.todayUnpaid) QuickAmount("Celý dluh ${st.balance}", Modifier.weight(1f)) { amountText = st.balance.toString(); received = null }
+                if (preset != null) QuickAmount("Objednávka $preset", Modifier.weight(1f), choice == "ORDER") { choice = "ORDER"; amountText = null; received = null }
+                if (st.todayUnpaid > 0) QuickAmount("Dnešek ${st.todayUnpaid}", Modifier.weight(1f), choice == "TODAY") { choice = "TODAY"; amountText = null; received = null }
+                if (st.balance > st.todayUnpaid) QuickAmount("Celý dluh ${st.balance}", Modifier.weight(1f), choice == "ALL") { choice = "ALL"; amountText = null; received = null }
             }
             Segmented(listOf("Hotově", "QR platba"), if (method == "CASH") 0 else 1) { method = if (it == 0) "CASH" else "QR" }
 
@@ -656,13 +668,13 @@ private fun PaySheet(
                 Keypad(Modifier.fillMaxWidth(),
                     onDigit = { d ->
                         if (editingReceived) received = ((received ?: 0).toString().trimStart('0') + d).take(7).toLong()
-                        else amountText = ((if (amountText == null) "" else amount) + d).trimStart('0').take(7)
+                        else { amountText = ((if (amountText == null) "" else amount) + d).trimStart('0').take(7); choice = null }
                     },
                     onBack = {
                         if (editingReceived) received = (received ?: 0).toString().dropLast(1).toLongOrNull() ?: 0
-                        else amountText = amount.dropLast(1)
+                        else { amountText = amount.dropLast(1); choice = null }
                     },
-                    onClear = { if (editingReceived) received = 0 else amountText = "" })
+                    onClear = { if (editingReceived) received = 0 else { amountText = ""; choice = null } })
                 received?.let { r ->
                     val change = r - value
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
@@ -729,9 +741,12 @@ private fun TransferSheet(members: List<MemberStatus>, itemName: String, onDismi
 }
 
 @Composable
-private fun QuickAmount(label: String, modifier: Modifier, onClick: () -> Unit) {
-    Box(modifier.height(46.dp).glass(RoundedCornerShape(14.dp), alpha = 0.07f)
-        .clickable(onClick = onClick), contentAlignment = Alignment.Center) { Text(label, fontWeight = FontWeight.SemiBold) }
+private fun QuickAmount(label: String, modifier: Modifier, selected: Boolean = false, onClick: () -> Unit) {
+    Box(modifier.height(46.dp)
+        .then(if (selected) Modifier.clip(RoundedCornerShape(14.dp)).background(KlubColors.GoldBrush) else Modifier.glass(RoundedCornerShape(14.dp), alpha = 0.07f))
+        .clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        Text(label, fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold, color = if (selected) KlubColors.Ink else MaterialTheme.colorScheme.onSurface)
+    }
 }
 
 /** POS-style numeric keypad. Long-press ⌫ clears. */

@@ -12,6 +12,8 @@ enum class Kind(val code: String, val label: String, val emoji: String, val volu
     SOFT_BOTTLE("SOFT_BOTTLE", "Limonády ve skle", "🧃", listOf(250, 330, 500), "Mattoni"),
     HOMEMADE("HOMEMADE", "Domácí limonády", "🍋", listOf(300, 400, 500), "Bezová s citronem"),
     HOT("HOT", "Teplé nápoje", "☕", emptyList(), "Espresso"),
+    SMOKING("SMOKING", "Kuřácké potřeby", "", emptyList(), "Zapalovač"),
+    CBD("CBD", "CBD", "", emptyList(), "CBD olej 10 %"),
     OTHER("OTHER", "Ostatní", "🍿", emptyList(), "Brambůrky");
 
     companion object {

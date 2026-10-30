@@ -234,10 +234,10 @@ private fun MenuLines(d: Drink, editing: Boolean, now: java.time.LocalDateTime, 
                 Text(if (p.pourMl > 0) volumeLabel(p.pourMl) else "", Modifier.width(56.dp),
                     style = MaterialTheme.typography.bodyMedium, color = KlubColors.Muted)
                 val title = buildString {
-                    append(if (i == 0 || shown.size == 1) d.name else "")
+                    append(d.name)
                     p.servingName?.takeIf { it.isNotBlank() }?.let { if (isNotEmpty()) append("  "); append(it) }
                 }
-                Text(title, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = if (i == 0) FontWeight.Medium else FontWeight.Normal),
+                Text(title, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
                     color = if (dim) KlubColors.Muted else MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (i == 0 && dim) Text("  nenaraženo", style = MaterialTheme.typography.labelSmall, color = KlubColors.Muted)
                 androidx.compose.foundation.Canvas(Modifier.weight(1f).height(10.dp).padding(horizontal = 6.dp)) {
