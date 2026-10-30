@@ -37,6 +37,8 @@ import androidx.compose.ui.layout.boundsInRoot
 import cz.klubpos.ui.components.reorderableGrid
 import cz.klubpos.ui.components.reorderItem
 import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import cz.klubpos.ui.theme.glass
 import cz.klubpos.ui.theme.goldFrame
 import cz.klubpos.ui.theme.platinumFrame
@@ -136,6 +138,7 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
     val paged = filter == Filter.ALL && query.isBlank()
     val pager = androidx.compose.foundation.pager.rememberPagerState { pages.size }
     var moveFor by remember { mutableStateOf<MemberStatus?>(null) }
+    var tilesLocked by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(true) }
     // Drag a tile onto a card tab to move the member there
     val tabRects = remember { androidx.compose.runtime.mutableStateMapOf<Int, androidx.compose.ui.geometry.Rect>() }
     var dragPointer by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
@@ -155,13 +158,25 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
         Box(Modifier.weight(1f)) {
             if (paged) {
                 Column(Modifier.fillMaxSize()) {
-                    if (pages.size > 1) PageTabs(pages, pager.currentPage, hoverTab, onRect = { i, r -> tabRects[i] = r }) { i ->
-                        scope.launch { pager.animateScrollToPage(i) }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.weight(1f)) {
+                            if (pages.size > 1) PageTabs(pages, pager.currentPage, hoverTab, onRect = { i, r -> tabRects[i] = r }) { i ->
+                                scope.launch { pager.animateScrollToPage(i) }
+                            }
+                        }
+                        Box(Modifier.padding(end = 12.dp).size(40.dp).clip(RoundedCornerShape(14.dp))
+                            .then(if (tilesLocked) Modifier.glass(RoundedCornerShape(14.dp)) else Modifier.background(KlubColors.GoldBrush))
+                            .clickable { tilesLocked = !tilesLocked }, contentAlignment = Alignment.Center) {
+                            Icon(if (tilesLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                                if (tilesLocked) "Odemknout přesouvání dlaždic" else "Zamknout dlaždice",
+                                Modifier.size(18.dp), tint = if (tilesLocked) MaterialTheme.colorScheme.onSurface else KlubColors.Ink)
+                        }
                     }
-                    androidx.compose.foundation.pager.HorizontalPager(pager, Modifier.fillMaxSize(), key = { it }) { page ->
+                    androidx.compose.foundation.pager.HorizontalPager(pager, Modifier.fillMaxSize(), key = { it },
+                        userScrollEnabled = tilesLocked) { page ->
                         MemberGrid(
                             members = members.filter { it.page.coerceIn(0, pages.lastIndex) == page },
-                            tileDp = cfg.memberTileDp, newbieDays = cfg.newbieDays, canReorder = true,
+                            tileDp = cfg.memberTileDp, newbieDays = cfg.newbieDays, canReorder = !tilesLocked,
                             tourFirst = page == 0,
                             onOpen = onOpenMember, onActions = { actionsFor = it },
                             onSaveOrder = { ids -> scope.launch { repo.saveMemberOrder(ids) } },
@@ -460,7 +475,7 @@ private fun MemberGrid(
             onDrop = { onSaveOrder(local.map { it.memberId }) },
             onLongPress = { key -> local.firstOrNull { it.memberId == key }?.let(onActions) },
             onDropAt = onDropAt?.let { f -> { key, pos -> f(key as Long, pos) } },
-            holdMillis = 1500, holdSilentMillis = 500, immediate = true),
+            holdMillis = 1500, holdSilentMillis = 500, immediate = canReorder),
         columns = GridCells.Adaptive(if (horizontal) (tileDp * 1.45f).dp else tileDp.dp),
         contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
         horizontalArrangement = Arrangement.spacedBy(gap),
@@ -470,7 +485,7 @@ private fun MemberGrid(
             MemberTile(m, newbie = m.isNewbie(newbieDays), compact = tileDp < 120, horizontal = horizontal,
                 holdRing = { cz.klubpos.ui.components.HoldRing(reorder, m.memberId, Modifier.matchParentSize()) },
                 modifier = (if (i == 0 && tourFirst) Modifier.tourTarget("member_tile") else Modifier).reorderItem(reorder, m.memberId),
-                onClick = { onOpen(m.memberId) })
+                onClick = { if (!reorder.holdDone) onOpen(m.memberId) })
         }
     }
     }

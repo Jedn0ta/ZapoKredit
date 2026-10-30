@@ -44,7 +44,8 @@ class GridReorderState(val grid: LazyGridState) {
     /** Hold-to-open: item being held and the 0..1 progress of the filling ring. */
     var holdKey by mutableStateOf<Any?>(null); internal set
     var holdProgress by mutableStateOf(0f); internal set
-    internal var holdDone = false
+    var holdDone = false
+        internal set
 }
 
 /** Hold-to-open loader: a gold line runs around the tile's frame as the hold progresses. */
@@ -120,6 +121,7 @@ fun Modifier.reorderableGrid(
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false, pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial)
             val item = state.grid.itemAt(down.position)
+            state.holdDone = false
             state.holdKey = item?.key
             var total = Offset.Zero
             while (true) {
@@ -132,7 +134,7 @@ fun Modifier.reorderableGrid(
             state.holdKey = null
         }
     }
-    then(holdTracker).onGloballyPositioned { state.origin = it.positionInRoot() }.pointerInput(state) {
+    then(holdTracker).onGloballyPositioned { state.origin = it.positionInRoot() }.pointerInput(state, immediate) {
         val slop = viewConfiguration.touchSlop * 2
             val onStart: (Offset) -> Unit = cb@{ p ->
                 val item = state.grid.itemAt(p) ?: return@cb
