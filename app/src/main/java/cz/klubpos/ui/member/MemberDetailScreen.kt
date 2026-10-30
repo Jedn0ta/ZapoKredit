@@ -180,6 +180,10 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
     var qtyFor by remember { mutableStateOf<Product?>(null) }
     var transferLine by remember { mutableStateOf<ReceiptLine?>(null) }
     var qtyLine by remember { mutableStateOf<CartLine?>(null) }
+    var cartMenu by remember { mutableStateOf<CartLine?>(null) }
+    var lineMenu by remember { mutableStateOf<ReceiptLine?>(null) }
+    var transferAll by remember { mutableStateOf(false) }
+    var cartTransfer by remember { mutableStateOf<CartLine?>(null) }
     val settings by rememberSettings().flow.collectAsState()
     // Favourites = what THIS member orders most often.
     val top by remember(memberId) { repo.memberFavorites(memberId) }.collectAsState(initial = emptyList())
@@ -248,10 +252,10 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
         Receipt(st, cart, lines, payments, mod, lastLabel, cartOnly, onRepeat = { repeat() }, onPayNow = { payNow() },
             onCartPlus = { l -> addToCart(l.product, 1.0, l.unitPrice, l.desc) },
             onCartMinus = { l -> removeOne(l) },
-            onCartLong = { l -> qtyLine = l },
+            onCartLong = { l -> cartMenu = l },
             onPlus = { l -> products.firstOrNull { it.id == l.productId }?.let { addToCart(it) } },
             onMinus = { l -> voidWithUndo(l.entryIds.first(), l.name) },
-            onLong = { l -> transferLine = l })
+            onLong = { l -> lineMenu = l })
     }
     val bar: @Composable (Boolean) -> Unit = { expanded ->
         OrderBar(st, cartTotal, cart.sumOf { it.qty }, expanded,
@@ -332,9 +336,39 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
     }
     transferLine?.let { l ->
         TransferSheet(statuses.filter { it.memberId != memberId }, l.name, onDismiss = { transferLine = null }) { to ->
-            scope.launch { repo.transfer(l.entryIds.first(), to.memberId); snackbar.showSnackbar("${l.name} → ${to.nickname ?: to.name}") }
+            val ids = if (transferAll) l.entryIds else listOf(l.entryIds.first())
+            scope.launch { ids.forEach { repo.transfer(it, to.memberId) }; snackbar.showSnackbar("${l.name} → ${to.nickname ?: to.name}") }
             transferLine = null
         }
+    }
+    cartTransfer?.let { l ->
+        TransferSheet(statuses.filter { it.memberId != memberId }, l.desc, onDismiss = { cartTransfer = null }) { to ->
+            cart.remove(l)
+            scope.launch {
+                repo.chargeCart(to.memberId, listOf(ClubRepository.CartItem(l.product?.id, l.desc, l.unitPrice, l.qty)))
+                snackbar.showSnackbar("${fmtQty(l.qty)}× ${l.desc} → ${to.nickname ?: to.name}")
+            }
+            cartTransfer = null
+        }
+    }
+    // tap on a line of the new order
+    cartMenu?.let { l ->
+        LineActions(l.desc, fmtQty(l.qty), onDismiss = { cartMenu = null }, actions = listOf(
+            "Změnit počet" to { qtyLine = l },
+            "Přesunout někomu jinému" to { cartTransfer = l },
+            "Odebrat z objednávky" to { cart.remove(l); Unit },
+        ))
+    }
+    // tap on a line of today's account
+    lineMenu?.let { l ->
+        LineActions(l.name, fmtQty(l.qty), onDismiss = { lineMenu = null }, actions = listOfNotNull(
+            (if (l.productId != null) "Přidat 1 ks" to { products.firstOrNull { it.id == l.productId }?.let { p ->
+                scope.launch { repo.chargeProduct(memberId, p.id, 1.0, l.unitPrice) } }; Unit } else null),
+            "Storno 1 položky" to { voidWithUndo(l.entryIds.first(), l.name); Unit },
+            (if (l.entryIds.size > 1) "Storno celého řádku" to { scope.launch { l.entryIds.forEach { repo.void(it) } }; Unit } else null),
+            "Přesunout 1 položku někomu" to { transferAll = false; transferLine = l },
+            (if (l.entryIds.size > 1) "Přesunout celý řádek někomu" to { transferAll = true; transferLine = l } else null),
+        ))
     }
     if (showHistory) HistorySheet(ledger, onDismiss = { showHistory = false }) { e -> voidWithUndo(e.id, e.description) }
     if (showEdit) member?.let { m ->
@@ -531,7 +565,7 @@ private fun Receipt(
                 start = SwipeAction(Icons.Default.Add, "+1", KlubColors.PaidToday) { onCartPlus(l) },
                 end = SwipeAction(Icons.Default.Remove, "−1", KlubColors.OldDebt) { onCartMinus(l) },
             ) {
-                Row(Modifier.fillMaxWidth().combinedClickable(onClick = {}, onLongClick = { onCartLong(l) })
+                Row(Modifier.fillMaxWidth().combinedClickable(onClick = { onCartLong(l) }, onLongClick = { onCartLong(l) })
                     .padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton({ onCartMinus(l) }) { Icon(Icons.Default.Remove, "Ubrat", tint = KlubColors.Muted) }
                     Text(fmtQty(l.qty), style = Display.copy(fontSize = 18.sp), color = KlubColors.Gold, modifier = Modifier.width(32.dp),
@@ -557,7 +591,7 @@ private fun Receipt(
                 end = SwipeAction(Icons.Default.Remove, "Storno", KlubColors.OldDebt) { onMinus(l) },
             ) {
                 Row(Modifier.fillMaxWidth()
-                    .combinedClickable(onClick = {}, onLongClick = { onLong(l) })
+                    .combinedClickable(onClick = { onLong(l) }, onLongClick = { onLong(l) })
                     .padding(horizontal = 20.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     Text(fmtQty(l.qty), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(36.dp))
@@ -738,6 +772,21 @@ private fun TransferSheet(members: List<MemberStatus>, itemName: String, onDismi
                     }
                     Text(m.nickname ?: m.name, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
                 }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LineActions(title: String, qty: String, onDismiss: () -> Unit, actions: List<Pair<String, () -> Unit>>) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surface) {
+        Column(Modifier.navigationBarsPadding().padding(bottom = 12.dp)) {
+            Text("$qty× $title", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
+            actions.forEach { (label, act) ->
+                Text(label, Modifier.fillMaxWidth().clickable { onDismiss(); act() }.padding(horizontal = 24.dp, vertical = 14.dp),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (label.startsWith("Storno") || label.startsWith("Odebrat")) KlubColors.OldDebt else MaterialTheme.colorScheme.onSurface)
             }
         }
     }

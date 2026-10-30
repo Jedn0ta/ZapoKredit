@@ -44,11 +44,14 @@ fun SwipeRow(
     content: @Composable () -> Unit,
 ) {
     val haptic = LocalHapticFeedback.current
+    // the state remembers its callback – always call the latest actions (otherwise a row acts on stale data)
+    val startNow by androidx.compose.runtime.rememberUpdatedState(start)
+    val endNow by androidx.compose.runtime.rememberUpdatedState(end)
     val state = rememberSwipeToDismissBoxState(
         confirmValueChange = { v ->
             when (v) {
-                SwipeToDismissBoxValue.StartToEnd -> start?.let { haptic.performHapticFeedback(HapticFeedbackType.LongPress); it.onAction() }
-                SwipeToDismissBoxValue.EndToStart -> end?.let { haptic.performHapticFeedback(HapticFeedbackType.LongPress); it.onAction() }
+                SwipeToDismissBoxValue.StartToEnd -> startNow?.let { haptic.performHapticFeedback(HapticFeedbackType.LongPress); it.onAction() }
+                SwipeToDismissBoxValue.EndToStart -> endNow?.let { haptic.performHapticFeedback(HapticFeedbackType.LongPress); it.onAction() }
                 SwipeToDismissBoxValue.Settled -> Unit
             }
             false // snap back
