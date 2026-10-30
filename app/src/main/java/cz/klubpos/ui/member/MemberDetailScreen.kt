@@ -159,6 +159,7 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
     val member by repo.member(memberId).collectAsState(initial = null)
     val statuses by remember { repo.memberStatuses(dayStart) }.collectAsState(initial = emptyList())
     val st = statuses.firstOrNull { it.memberId == memberId }
+    val debt by remember { repo.debtInfo() }.collectAsState(initial = emptyMap())
     val products by repo.activeProducts().collectAsState(initial = emptyList())
     val ledger by repo.ledger(memberId).collectAsState(initial = emptyList())
     val (lines, payments) = remember(ledger) { buildReceipt(ledger, dayStart) }
@@ -259,7 +260,7 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            TopRow(member?.nickname ?: member?.name ?: "", member?.photoId, st, member?.avatar,
+            TopRow(member?.nickname ?: member?.name ?: "", member?.photoId, st, member?.avatar, debt[memberId],
                 onBack = back, onName = { showEdit = true }, onHistory = { showHistory = true })
             val limit = settings.debtLimit
             if (limit > 0 && st != null && st.balance >= limit) {
@@ -349,7 +350,7 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
 private data class CartLine(val product: Product?, val desc: String, val unitPrice: Long, val qty: Double)
 
 @Composable
-private fun TopRow(name: String, photoId: String?, st: MemberStatus?, avatar: String?, onBack: () -> Unit, onName: () -> Unit, onHistory: () -> Unit) {
+private fun TopRow(name: String, photoId: String?, st: MemberStatus?, avatar: String?, debt: ClubRepository.DebtInfo?, onBack: () -> Unit, onName: () -> Unit, onHistory: () -> Unit) {
     Row(Modifier.fillMaxWidth().height(68.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Zpět") }
         Row(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable(onClick = onName).padding(6.dp),
@@ -364,7 +365,9 @@ private fun TopRow(name: String, photoId: String?, st: MemberStatus?, avatar: St
         // Today / total debt – tap for the full history (what and when)
         Column(Modifier.clip(RoundedCornerShape(14.dp)).clickable(onClick = onHistory).tourTarget("history")
             .padding(horizontal = 12.dp, vertical = 4.dp), horizontalAlignment = Alignment.End) {
-            Text("dnes ${st?.todaySpend ?: 0} · dluh", style = MaterialTheme.typography.labelSmall, color = KlubColors.Muted)
+            Text(if ((st?.olderDebt ?: 0) > 0 && debt != null)
+                    "dluh od " + SimpleDateFormat("d. M.", Locale("cs", "CZ")).format(Date(debt.since)) + (debt.bartender?.let { " · $it" } ?: "")
+                else "dnes ${st?.todaySpend ?: 0} · dluh", style = MaterialTheme.typography.labelSmall, color = KlubColors.Muted)
             Text(Credits.format((st?.balance ?: 0).coerceAtLeast(0)), style = Display.copy(fontSize = 20.sp),
                 color = when { (st?.balance ?: 0) <= 0 -> KlubColors.PaidToday; (st?.olderDebt ?: 0) > 0 -> KlubColors.OldDebt; else -> KlubColors.OpenTab })
         }

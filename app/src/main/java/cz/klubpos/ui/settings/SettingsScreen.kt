@@ -111,67 +111,10 @@ fun SettingsScreen(onStartTour: () -> Unit = {}) {
                 confirmButton = { TextButton({ ownerLock.unpair(); confirmUnpair = false }) { Text("Zrušit klíč") } },
                 dismissButton = { TextButton({ confirmUnpair = false }) { Text("Zpět") } })
 
-            // ---------- Klíč majitele ----------
-            Text("Klíč majitele", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-            Column(Modifier.fillMaxWidth().glass().tourTarget("owner_key").padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(when {
-                    !paired -> "Není spárován. Správu může měnit kdokoli – doporučujeme spárovat telefon majitele."
-                    unlocked -> "🔓 Správa odemčena (na ${OwnerLock.UNLOCK_MINUTES} min)."
-                    else -> "🔒 Ceny, barmani a platby jsou zamčené. Odemkne je jen majitel svým telefonem."
-                }, color = if (!paired) KlubColors.OpenTab else MaterialTheme.colorScheme.onSurface)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    when {
-                        !paired -> Button({ pairing = true }) { Text("Spárovat telefon") }
-                        !unlocked -> Button({ askUnlock = true }) { Text("Odemknout") }
-                        else -> {
-                            OutlinedButton({ ownerLock.lock() }) { Text("Zamknout") }
-                            OutlinedButton({ pairing = true }) { Text("Nový klíč") }
-                            TextButton({ confirmUnpair = true }) { Text("Zrušit", color = KlubColors.OldDebt) }
-                        }
-                    }
-                }
-            }
-
-            // ---------- Členové ----------
-            Text("Členové", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-            Column(Modifier.fillMaxWidth().glass().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Štítek „Nováček“ u nově přidaných členů", fontWeight = FontWeight.SemiBold)
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(0 to "Vypnuto", 7 to "7 dní", 14 to "14 dní", 30 to "30 dní", 60 to "60 dní", 90 to "90 dní").forEach { (d, l) ->
-                        androidx.compose.material3.FilterChip(cfg.newbieDays == d, { appSettings.update { it.copy(newbieDays = d) } }, label = { Text(l) })
-                    }
-                }
-                Text("VIP nastavíš podržením dlaždice člena → Nastavit jako VIP, nebo v úpravě člena.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            MemberCardsSettings()
-
-            // ---------- Barmani ----------
-            Text("Barmani", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-            BartendersSection(canEdit = unlocked, onRequestUnlock = { askUnlock = true })
-
-            // ---------- Dodavatelé ----------
-            Text("Dodavatelé", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-            cz.klubpos.ui.suppliers.SuppliersSection()
-
-            // ---------- Průvodce ----------
-            Card(Modifier.fillMaxWidth(), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f))) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Průvodce aplikací", fontWeight = FontWeight.SemiBold)
-                        Text("Ukáže všechny funkce přímo na obrazovce.", style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Button(onClick = onStartTour) { Text("Spustit") }
-                }
-            }
-
-            // ---------- Uzávěrka ----------
-            Text("Uzávěrka dne", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            SettingsHeader("Večer", "Dnešní tržba, platby a ukončení večera.")
             DayCloseCard(Modifier.tourTarget("close_day"))
 
-            // ---------- Platby ----------
-            Text("Platby", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            SettingsHeader("Platby a dluhy", "QR platby na účet a limit, nad kterým aplikace upozorní.")
             Card(Modifier.fillMaxWidth().tourTarget("payment_settings")) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     var account by remember(cfg.account) { mutableStateOf(cfg.account) }
@@ -192,36 +135,69 @@ fun SettingsScreen(onStartTour: () -> Unit = {}) {
                     OutlinedTextField(limit, { limit = it.filter(Char::isDigit) }, label = { Text("Limit dluhu (${cz.klubpos.domain.Credits.SYMBOL}, prázdné = bez limitu)") },
                         singleLine = true, modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Nezhasínat obrazovku", Modifier.weight(1f))
-                        androidx.compose.material3.Switch(cfg.keepScreenOn, { v -> appSettings.update { it.copy(keepScreenOn = v) } })
-                    }
                     val dirty = account != cfg.account || club != cfg.clubName || (limit.toLongOrNull() ?: 0) != cfg.debtLimit
                     Button(enabled = dirty && (account.isBlank() || iban != null), onClick = {
                         if (!unlocked) askUnlock = true
                         else appSettings.update { it.copy(account = account, clubName = club.ifBlank { "Klub" }, debtLimit = limit.toLongOrNull() ?: 0) }
-                    }) { Text(if (unlocked) "Uložit" else "🔒 Uložit") }
+                    }) { Text(if (unlocked) "Uložit" else "Uložit (odemknout)") }
                 }
             }
 
-            // ---------- O aplikaci ----------
-            Text("O aplikaci", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            SettingsHeader("Home a členové", "Vzhled hlavní obrazovky, karty a štítek pro nováčky.")
+            Row(Modifier.fillMaxWidth().glass().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Nezhasínat obrazovku", Modifier.weight(1f))
+                androidx.compose.material3.Switch(cfg.keepScreenOn, { v -> appSettings.update { it.copy(keepScreenOn = v) } })
+            }
+            Column(Modifier.fillMaxWidth().glass().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Štítek „Nováček“ u nově přidaných členů", fontWeight = FontWeight.SemiBold)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(0 to "Vypnuto", 7 to "7 dní", 14 to "14 dní", 30 to "30 dní", 60 to "60 dní", 90 to "90 dní").forEach { (d, l) ->
+                        androidx.compose.material3.FilterChip(cfg.newbieDays == d, { appSettings.update { it.copy(newbieDays = d) } }, label = { Text(l) })
+                    }
+                }
+                Text("VIP nastavíš podržením dlaždice člena → Nastavit jako VIP, nebo v úpravě člena.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            MemberCardsSettings()
+
+            SettingsHeader("Barmani", "Přihlašování PINem a kdo co namarkoval. Bez barmanů aplikace běží bez přihlášení.")
+            BartendersSection(canEdit = unlocked, onRequestUnlock = { askUnlock = true })
+
+            SettingsHeader("Dodavatelé", "Kontakty pro objednávky ze Skladu a Nákupu.")
+            cz.klubpos.ui.suppliers.SuppliersSection()
+
+            SettingsHeader("Zabezpečení", "Klíč majitele zamyká ceny, barmany a platby.")
+            Column(Modifier.fillMaxWidth().glass().tourTarget("owner_key").padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(when {
+                    !paired -> "Není spárován. Správu může měnit kdokoli – doporučujeme spárovat telefon majitele."
+                    unlocked -> "Správa odemčena (na ${OwnerLock.UNLOCK_MINUTES} min)."
+                    else -> "Ceny, barmani a platby jsou zamčené. Odemkne je jen majitel svým telefonem."
+                }, color = if (!paired) KlubColors.OpenTab else MaterialTheme.colorScheme.onSurface)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    when {
+                        !paired -> Button({ pairing = true }) { Text("Spárovat telefon") }
+                        !unlocked -> Button({ askUnlock = true }) { Text("Odemknout") }
+                        else -> {
+                            OutlinedButton({ ownerLock.lock() }) { Text("Zamknout") }
+                            OutlinedButton({ pairing = true }) { Text("Nový klíč") }
+                            TextButton({ confirmUnpair = true }) { Text("Zrušit", color = KlubColors.OldDebt) }
+                        }
+                    }
+                }
+            }
+
+            SettingsHeader("Aplikace", "Průvodce, aktualizace a informace o verzi.")
             Card(Modifier.fillMaxWidth(), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f))) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(context.getString(R.string.app_name), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    InfoRow("Verze", "${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})")
-                    InfoRow("Typ sestavení", if (BuildConfig.DEBUG) "vývojové (debug)" else "produkční")
-                    InfoRow("Repozitář", updater.repo)
-                    InfoRow("Obchodní den začíná", "%02d:00".format(BusinessDay.CUTOFF_HOUR))
-                    InfoRow("Data", "šifrovaná (SQLCipher + Android Keystore)")
-                    TextButton(onClick = {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(updater.repoUrl)))
-                    }) { Text("Otevřít repozitář na GitHubu") }
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Průvodce aplikací", fontWeight = FontWeight.SemiBold)
+                        Text("Ukáže všechny funkce přímo na obrazovce.", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Button(onClick = onStartTour) { Text("Spustit") }
                 }
             }
 
-            // ---------- Aktualizace ----------
-            Text("Aktualizace", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
             Card(Modifier.fillMaxWidth(), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f))) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     when (val s = state) {
@@ -256,6 +232,20 @@ fun SettingsScreen(onStartTour: () -> Unit = {}) {
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
+            Card(Modifier.fillMaxWidth(), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f))) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(context.getString(R.string.app_name), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    InfoRow("Verze", "${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})")
+                    InfoRow("Typ sestavení", if (BuildConfig.DEBUG) "vývojové (debug)" else "produkční")
+                    InfoRow("Repozitář", updater.repo)
+                    InfoRow("Obchodní den začíná", "%02d:00".format(BusinessDay.CUTOFF_HOUR))
+                    InfoRow("Data", "šifrovaná (SQLCipher + Android Keystore)")
+                    TextButton(onClick = {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(updater.repoUrl)))
+                    }) { Text("Otevřít repozitář na GitHubu") }
+                }
+            }
+
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -320,6 +310,14 @@ private fun ReleaseCard(r: ReleaseInfo, onDownload: () -> Unit) {
         if (r.apkSize > 0) Text("Velikost %.1f MB".format(r.apkSize / 1_048_576.0), style = MaterialTheme.typography.bodySmall)
         if (r.notes.isNotBlank()) Text(r.notes.take(1500), style = MaterialTheme.typography.bodyMedium)
         Button(onClick = onDownload) { Text("Stáhnout a nainstalovat") }
+    }
+}
+
+@Composable
+private fun SettingsHeader(title: String, sub: String) {
+    Column(Modifier.padding(top = 12.dp)) {
+        Text(title, style = MaterialTheme.typography.titleLarge)
+        Text(sub, style = MaterialTheme.typography.bodySmall, color = KlubColors.Muted)
     }
 }
 

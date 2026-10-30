@@ -31,6 +31,21 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
         db.ledger().insert(e.copy(bartenderId = _bartender.value?.id ?: e.bartenderId))
 
     fun bartenders() = db.bartenders().observeActive()
+
+    /** Since when a member owes money (oldest charge not covered yet) and who served that charge. */
+    data class DebtInfo(val since: Long, val bartender: String?)
+    fun debtInfo(): Flow<Map<Long, DebtInfo>> =
+        kotlinx.coroutines.flow.combine(db.ledger().observeEverything(), db.bartenders().observeAll()) { all, bs ->
+            val voided = all.mapNotNull { it.voidsEntryId }.toSet()
+            all.filter { it.voidsEntryId == null && it.id !in voided }.groupBy { it.memberId }.mapNotNull { (mid, es) ->
+                val balance = es.sumOf { it.amount }
+                if (balance <= 0) return@mapNotNull null
+                var acc = 0L
+                val oldest = es.filter { it.amount > 0 }.sortedByDescending { it.createdAt }.firstOrNull { acc += it.amount; acc >= balance }
+                    ?: es.filter { it.amount > 0 }.minByOrNull { it.createdAt } ?: return@mapNotNull null
+                mid to DebtInfo(oldest.createdAt, bs.firstOrNull { it.id == oldest.bartenderId }?.name)
+            }.toMap()
+        }
     fun allBartenders() = db.bartenders().observeAll()
     fun bartenderSales(since: Long) = db.bartenders().observeSales(since)
 

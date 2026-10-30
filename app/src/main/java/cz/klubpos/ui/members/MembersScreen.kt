@@ -105,7 +105,7 @@ import cz.klubpos.ui.theme.KlubColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private enum class Filter(val label: String) { ALL("Vše"), IN_CLUB("In The House"), DEBT("Dluh") }
+private enum class Filter(val label: String) { ALL("Vše"), IN_CLUB("Přítomní"), DEBT("Dluh") }
 
 /**
  * Main POS screen: grid of members.
@@ -120,6 +120,7 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
     var dayStart by remember { mutableLongStateOf(BusinessDay.startMillis()) }
     LaunchedEffect(Unit) { while (true) { delay(60_000); dayStart = BusinessDay.startMillis() } }
     val members by remember(dayStart) { repo.memberStatuses(dayStart) }.collectAsState(initial = emptyList())
+    val debts by remember { repo.debtInfo() }.collectAsState(initial = emptyMap())
 
     var filter by remember { mutableStateOf(Filter.ALL) }
     var query by remember { mutableStateOf("") }
@@ -129,7 +130,7 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
     var payAllFor by remember { mutableStateOf<MemberStatus?>(null) }
 
     val shown = members
-        .filter { when (filter) { Filter.ALL -> true; Filter.IN_CLUB -> it.inClub; Filter.DEBT -> it.hasDebt } }
+        .filter { when (filter) { Filter.ALL -> true; Filter.IN_CLUB -> it.inClub; Filter.DEBT -> it.olderDebt > 0 } }
         .filter { query.isBlank() || it.name.contains(query, true) || (it.nickname?.contains(query, true) == true) }
 
     val cfg by cz.klubpos.ui.components.rememberSettings().flow.collectAsState()
@@ -176,7 +177,7 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
                         userScrollEnabled = tilesLocked) { page ->
                         MemberGrid(
                             members = members.filter { it.page.coerceIn(0, pages.lastIndex) == page },
-                            tileDp = cfg.memberTileDp, newbieDays = cfg.newbieDays, canReorder = !tilesLocked,
+                            tileDp = cfg.memberTileDp, newbieDays = cfg.newbieDays, canReorder = !tilesLocked, debts = debts,
                             tourFirst = page == 0,
                             onOpen = onOpenMember, onActions = { actionsFor = it },
                             onSaveOrder = { ids -> scope.launch { repo.saveMemberOrder(ids) } },
@@ -191,7 +192,7 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
                     }
                 }
             } else {
-                MemberGrid(shown, cfg.memberTileDp, cfg.newbieDays, canReorder = false, tourFirst = true,
+                MemberGrid(shown, cfg.memberTileDp, cfg.newbieDays, canReorder = false, tourFirst = true, debts = debts,
                     onOpen = onOpenMember, onActions = { actionsFor = it }, onSaveOrder = {})
             }
             Box(Modifier.align(Alignment.BottomEnd).padding(20.dp).size(60.dp)
@@ -255,7 +256,7 @@ fun headlineColor(h: Headline): Color = when (h) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected: Boolean = false, newbie: Boolean = false,
+private fun MemberTile(m: MemberStatus, since: Long? = null, modifier: Modifier = Modifier, selected: Boolean = false, newbie: Boolean = false,
     compact: Boolean = false, horizontal: Boolean = false,
     holdRing: (@Composable androidx.compose.foundation.layout.BoxScope.() -> Unit)? = null, onClick: () -> Unit) {
     val shape = RoundedCornerShape(24.dp)
@@ -312,8 +313,8 @@ private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected:
             }
         }
         }
-        AmountBadge(m, Modifier.align(Alignment.TopEnd).padding(8.dp))
-        // In The House = green dot, was here today but left = grey dot
+        AmountBadge(m, since, Modifier.align(Alignment.TopEnd).padding(8.dp))
+        // Přítomní = green dot, was here today but left = grey dot
         if (m.inClub || m.visitedToday) {
             val c = if (m.inClub) KlubColors.PaidToday else Color(0xFF8A8794)
             Box(Modifier.align(Alignment.BottomEnd).padding(10.dp).size(if (compact) 14.dp else 18.dp)
@@ -331,14 +332,24 @@ private fun MemberTile(m: MemberStatus, modifier: Modifier = Modifier, selected:
     }
 }
 
-/** One number only. Orange = today's tab, red = old debt, green ✓ = paid today. Nothing when clear. */
+/** Orange = today's unpaid, red = debt from earlier days (with the date it started). Nothing when clear. */
 @Composable
-private fun AmountBadge(m: MemberStatus, modifier: Modifier) {
-    val (text, color) = when {
-        m.balance > 0 -> Credits.format(m.balance) to (if (m.todayUnpaid > 0) KlubColors.OpenTab else KlubColors.OldDebt)
-        else -> return
+private fun AmountBadge(m: MemberStatus, since: Long?, modifier: Modifier) {
+    if (m.balance <= 0) return
+    Column(modifier, horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (m.todayUnpaid > 0) Pill(Credits.format(m.todayUnpaid), KlubColors.OpenTab)
+        if (m.olderDebt > 0) {
+            Pill(Credits.format(m.olderDebt), KlubColors.OldDebt)
+            if (since != null) Text("od " + java.text.SimpleDateFormat("d. M.", java.util.Locale("cs", "CZ")).format(java.util.Date(since)),
+                Modifier.clip(RoundedCornerShape(6.dp)).background(Color.Black.copy(alpha = 0.55f)).padding(horizontal = 6.dp, vertical = 1.dp),
+                color = Color.White, style = MaterialTheme.typography.labelSmall)
+        }
     }
-    Text(text, modifier.shadow(12.dp, RoundedCornerShape(12.dp), ambientColor = color, spotColor = color)
+}
+
+@Composable
+private fun Pill(text: String, color: Color) {
+    Text(text, Modifier.shadow(12.dp, RoundedCornerShape(12.dp), ambientColor = color, spotColor = color)
         .clip(RoundedCornerShape(12.dp)).background(Brush.linearGradient(listOf(color, color.copy(alpha = 0.75f))))
         .padding(horizontal = 10.dp, vertical = 4.dp),
         color = KlubColors.Ink, style = MaterialTheme.typography.labelLarge.copy(fontFamily = Grotesk, fontWeight = FontWeight.Bold, fontSize = 15.sp))
@@ -451,6 +462,7 @@ private fun PageTabs(pages: List<String>, current: Int, hover: Int?, onRect: (In
 @Composable
 private fun MemberGrid(
     members: List<MemberStatus>, tileDp: Int, newbieDays: Int, canReorder: Boolean, tourFirst: Boolean,
+    debts: Map<Long, cz.klubpos.data.repo.ClubRepository.DebtInfo> = emptyMap(),
     onOpen: (Long) -> Unit, onActions: (MemberStatus) -> Unit, onSaveOrder: (List<Long>) -> Unit,
     onDragPointer: (androidx.compose.ui.geometry.Offset?) -> Unit = {},
     onDropAt: ((Long, androidx.compose.ui.geometry.Offset) -> Boolean)? = null,
@@ -482,7 +494,7 @@ private fun MemberGrid(
         verticalArrangement = Arrangement.spacedBy(gap),
     ) {
         itemsIndexed(local, key = { _, m -> m.memberId }) { i, m ->
-            MemberTile(m, newbie = m.isNewbie(newbieDays), compact = tileDp < 120, horizontal = horizontal,
+            MemberTile(m, since = debts[m.memberId]?.since, newbie = m.isNewbie(newbieDays), compact = tileDp < 120, horizontal = horizontal,
                 holdRing = { cz.klubpos.ui.components.HoldRing(reorder, m.memberId, Modifier.matchParentSize()) },
                 modifier = (if (i == 0 && tourFirst) Modifier.tourTarget("member_tile") else Modifier).reorderItem(reorder, m.memberId),
                 onClick = { if (!reorder.holdDone) onOpen(m.memberId) })

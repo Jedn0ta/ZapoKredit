@@ -132,6 +132,9 @@ interface LedgerDao {
     @Query("SELECT * FROM ledger WHERE memberId = :memberId AND type = 'CHARGE' AND voidsEntryId IS NULL ORDER BY createdAt DESC LIMIT 1")
     suspend fun lastCharge(memberId: Long): LedgerEntry?
 
+    @Query("SELECT * FROM ledger ORDER BY createdAt")
+    fun observeEverything(): Flow<List<LedgerEntry>>
+
     @Insert suspend fun insert(e: LedgerEntry): Long
     @Query("SELECT * FROM ledger WHERE id = :id") suspend fun get(id: Long): LedgerEntry?
     @Query("SELECT * FROM ledger WHERE memberId = :memberId ORDER BY createdAt DESC LIMIT :limit")
