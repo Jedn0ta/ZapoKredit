@@ -105,7 +105,7 @@ fun InventoryScreen() {
             Row(Modifier.fillMaxWidth().padding(20.dp, 12.dp, 12.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Sklad", style = MaterialTheme.typography.headlineSmall)
-                    Text(if (below > 0) "$below pod cílovým stavem" else "vše na cílovém stavu",
+                    Text(if (below > 0) "$below pod cílovým stavem" else "na cílovém stavu",
                         style = MaterialTheme.typography.labelMedium, color = if (below > 0) KlubColors.OpenTab else KlubColors.Muted)
                 }
                 Segmented(listOf("Přehled", "Inventura"), tab) { tab = it }
@@ -141,20 +141,13 @@ private fun Overview(
 ) {
     val byLoc = items.groupBy { it.location.ifBlank { "Sklad" } }
     LazyVerticalGrid(GridCells.Adaptive(330.dp), contentPadding = PaddingValues(12.dp, 0.dp, 12.dp, 96.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        horizontalArrangement = Arrangement.spacedBy(28.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
         item(key = "kegs", span = { GridItemSpan(maxLineSpan) }) { KegsSection() }
         item(key = "actions", span = { GridItemSpan(maxLineSpan) }) {
-            Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(Modifier.weight(1f).height(52.dp).clip(RoundedCornerShape(16.dp)).background(KlubColors.GoldBrush)
-                    .clickable(onClick = onOrder).tourTarget("stock_order"), contentAlignment = Alignment.Center) {
-                    Text("🛒  Objednat do cílového stavu", color = KlubColors.Ink, fontWeight = FontWeight.Bold)
-                }
-                Box(Modifier.height(52.dp).glass(RoundedCornerShape(16.dp)).clickable(onClick = onNew).padding(horizontal = 18.dp),
-                    contentAlignment = Alignment.Center) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text("Nová zásoba", fontWeight = FontWeight.SemiBold)
-                    }
-                }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onOrder, Modifier.tourTarget("stock_order")) { Text("Objednat do cílového stavu", color = KlubColors.Gold) }
+                Spacer(Modifier.weight(1f))
+                TextButton(onNew) { Text("+ Nová zásoba", color = KlubColors.Muted) }
             }
         }
         if (items.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
@@ -163,8 +156,8 @@ private fun Overview(
         }
         byLoc.forEach { (loc, list) ->
             item(key = "loc-$loc", span = { GridItemSpan(maxLineSpan) }) {
-                Text("📍 $loc", Modifier.padding(start = 6.dp, top = 10.dp), style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary)
+                Text(loc.uppercase(), Modifier.padding(start = 4.dp, top = 12.dp), style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.5.sp),
+                    color = KlubColors.Muted)
             }
             items(list, key = { it.id }) { si ->
                 StockCard(si, suppliers.firstOrNull { it.id == si.supplierId }?.name, Modifier.tourTarget("stock_row"),
@@ -180,25 +173,21 @@ private fun StockCard(si: StockItem, supplier: String?, modifier: Modifier, onCl
     val low = si.target > 0 && si.qty < si.target
     val empty = si.qty <= 0.0
     val color = when { empty -> KlubColors.OldDebt; frac < 0.5f -> KlubColors.OpenTab; low -> KlubColors.Gold; else -> KlubColors.PaidToday }
-    Column(modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp)).clickable(onClick = onClick).padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 4.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(si.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(listOfNotNull(if (si.unitType == "BOTTLE" && si.containerMl > 0) "lahev ${volumeLabel(si.containerMl)}" else null,
-                    supplier).joinToString(" · ").ifEmpty { " " },
-                    style = MaterialTheme.typography.labelSmall, color = KlubColors.Muted)
+                Text(si.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val sub = listOfNotNull(if (si.unitType == "BOTTLE" && si.containerMl > 0) volumeLabel(si.containerMl) else null,
+                    if (si.target > 0) "cíl ${fmtQty(si.target)}" else null, supplier).joinToString(" · ")
+                if (sub.isNotEmpty()) Text(sub, style = MaterialTheme.typography.labelSmall, color = KlubColors.Muted, maxLines = 1)
             }
-            Text(qtyLabel(si.qty, si.unitLabel), style = Display.copy(fontSize = 22.sp), color = color)
+            Text(qtyLabel(si.qty, si.unitLabel), style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold), color = color)
+            Text("+", Modifier.padding(start = 6.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onReceive)
+                .padding(horizontal = 10.dp, vertical = 2.dp), fontSize = 20.sp, color = KlubColors.Muted)
         }
-        Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(KlubColors.SurfaceHigh)) {
-            Box(Modifier.fillMaxHeight().fillMaxWidth(frac).clip(RoundedCornerShape(4.dp))
-                .background(Brush.horizontalGradient(listOf(color.copy(alpha = 0.6f), color))))
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(if (si.target > 0) "cíl ${qtyLabel(si.target, si.unitLabel)}" else "bez cílového stavu",
-                Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = KlubColors.Muted)
-            TextButton(onReceive) { Text("+ Příjem") }
+        if (si.target > 0) Box(Modifier.fillMaxWidth().height(2.dp).background(KlubColors.Hairline)) {
+            Box(Modifier.fillMaxHeight().fillMaxWidth(frac).background(color))
         }
     }
 }
@@ -211,56 +200,56 @@ private fun CountScreen(items: List<StockItem>, onSave: (Map<Long, Double>) -> U
     val byLoc = items.groupBy { it.location.ifBlank { "Sklad" } }
     Column(Modifier.fillMaxSize()) {
         LazyVerticalGrid(GridCells.Adaptive(360.dp), Modifier.weight(1f), contentPadding = PaddingValues(12.dp, 0.dp, 12.dp, 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            horizontalArrangement = Arrangement.spacedBy(28.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Text("Spočítej, co opravdu máš. Otevřenou lahev nastav posuvníkem (desetiny). Ulož až na konci.",
                     Modifier.padding(6.dp), style = MaterialTheme.typography.bodySmall, color = KlubColors.Muted)
             }
             byLoc.forEach { (loc, list) ->
                 item(key = "c-loc-$loc", span = { GridItemSpan(maxLineSpan) }) {
-                    Text("📍 $loc", Modifier.padding(start = 6.dp, top = 8.dp), style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary)
+                    Text(loc.uppercase(), Modifier.padding(start = 4.dp, top = 12.dp), style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.5.sp),
+                        color = KlubColors.Muted)
                 }
                 items(list, key = { "c${it.id}" }) { si ->
                     val f = full[si.id] ?: 0
                     val o = open[si.id] ?: 0
                     val counted = f + o / 10.0
                     val changed = kotlin.math.abs(counted - si.qty) > 0.01
-                    Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(si.name, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text("bylo ${qtyLabel(si.qty, si.unitLabel)}", style = MaterialTheme.typography.labelSmall, color = KlubColors.Muted)
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(if (si.unitType == "BOTTLE") "plné" else si.unitLabel, Modifier.weight(1f), color = KlubColors.Muted)
+                            Column(Modifier.weight(1f)) {
+                                Text(si.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text("bylo ${qtyLabel(si.qty, si.unitLabel)}", style = MaterialTheme.typography.labelSmall, color = KlubColors.Muted)
+                            }
                             CountButton("−") { full[si.id] = (f - 1).coerceAtLeast(0) }
-                            Text("$f", Modifier.width(56.dp), style = Display.copy(fontSize = 26.sp),
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = if (changed) KlubColors.Gold else KlubColors.Cream)
+                            Text("$f", Modifier.width(40.dp), style = MaterialTheme.typography.titleMedium,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = if (changed) KlubColors.Gold else MaterialTheme.colorScheme.onSurface)
                             CountButton("+") { full[si.id] = f + 1 }
                         }
                         if (si.unitType == "BOTTLE") Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("otevřená", Modifier.width(80.dp), color = KlubColors.Muted)
-                            Slider(o.toFloat(), { open[si.id] = Math.round(it) }, Modifier.weight(1f), valueRange = 0f..9f, steps = 8)
-                            Text(if (o == 0) "—" else "$o/10", Modifier.width(44.dp), color = KlubColors.Cream)
+                            Text("otevřená", Modifier.width(72.dp), style = MaterialTheme.typography.labelSmall, color = KlubColors.Muted)
+                            Slider(o.toFloat(), { open[si.id] = Math.round(it) }, Modifier.weight(1f).height(28.dp), valueRange = 0f..9f, steps = 8)
+                            Text(if (o == 0) "—" else "$o/10", Modifier.width(40.dp), style = MaterialTheme.typography.labelSmall, color = KlubColors.Muted)
                         }
+                        HorizontalDivider(Modifier.padding(top = 4.dp), color = KlubColors.Hairline)
                     }
                 }
             }
         }
-        Box(Modifier.fillMaxWidth().padding(12.dp).height(56.dp).clip(RoundedCornerShape(16.dp)).background(KlubColors.GoldBrush)
+        Box(Modifier.fillMaxWidth().padding(12.dp).height(48.dp).clip(RoundedCornerShape(12.dp)).background(KlubColors.SurfaceHigh)
             .clickable {
                 onSave(items.associate { it.id to ((full[it.id] ?: 0) + (open[it.id] ?: 0) / 10.0) }
                     .filter { (id, q) -> kotlin.math.abs(q - (items.first { it.id == id }.qty)) > 0.01 })
             }, contentAlignment = Alignment.Center) {
-            Text("Uložit inventuru", color = KlubColors.Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            Text("Uložit inventuru", color = KlubColors.Gold, fontWeight = FontWeight.SemiBold)
         }
     }
 }
 
 @Composable
 private fun CountButton(label: String, onClick: () -> Unit) {
-    Box(Modifier.size(46.dp).glass(RoundedCornerShape(14.dp)).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
-        Text(label, style = MaterialTheme.typography.titleLarge)
+    Box(Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        Text(label, style = MaterialTheme.typography.titleLarge, color = KlubColors.Muted)
     }
 }
 
@@ -298,8 +287,8 @@ private fun StockItemEditor(si: StockItem, all: List<StockItem>, suppliers: List
 
             Text("Co to je", style = MaterialTheme.typography.labelLarge, color = KlubColors.Muted)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(bottle, { bottle = true; unit = "lahev" }, label = { Text("🍾 Lahev – rozlévá se") })
-                FilterChip(!bottle, { bottle = false; if (unit == "lahev") unit = "ks" }, label = { Text("📦 Kusy – prodává se celé") })
+                FilterChip(bottle, { bottle = true; unit = "lahev" }, label = { Text("Lahev – rozlévá se") })
+                FilterChip(!bottle, { bottle = false; if (unit == "lahev") unit = "ks" }, label = { Text("Kusy – prodává se celé") })
             }
             if (bottle) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf(500, 700, 750, 1000).forEach { v -> FilterChip(ml == v.toString(), { ml = v.toString() }, label = { Text(volumeLabel(v)) }) }

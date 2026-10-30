@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.AlertDialog
@@ -154,6 +155,13 @@ fun DrinkMenuScreen() {
                 .padding(horizontal = 8.dp, vertical = 6.dp), fontSize = 13.sp, color = KlubColors.Muted)
             Text("A+", Modifier.clip(RoundedCornerShape(8.dp)).clickable { scale = (scale + 0.1f).coerceAtMost(1.8f); prefs.edit().putFloat("scale", scale).apply() }
                 .padding(horizontal = 8.dp, vertical = 6.dp), fontSize = 17.sp, color = KlubColors.Muted)
+            IconButton({
+                val pdfCols = layout.map { col -> col.filter { k -> menu[k].orEmpty().any { d -> d.servings.any { it.price > 0 } } }.flatMap { k ->
+                    listOf<PdfLine>(PdfLine.Header(k.label)) + menu[k].orEmpty().flatMap { d -> d.servings.filter { it.price > 0 }.map { p ->
+                        PdfLine.Item(volumeLabel(p.pourMl), d.name + (p.servingName?.takeIf { it.isNotBlank() }?.let { "  $it" } ?: ""), "${p.price} Kč") } }
+                } }.filter { it.isNotEmpty() }.ifEmpty { listOf(emptyList()) }
+                runCatching { shareMenuPdf(ctx, "Nápojový lístek", pdfCols, scale) }
+            }) { Icon(Icons.Default.PictureAsPdf, "Uložit do PDF / tisk", tint = KlubColors.Muted) }
             if (editing) IconButton({ showIo = true }) { Icon(Icons.Default.UploadFile, "Import / vzor z Excelu", tint = KlubColors.Muted) }
             TextButton({ if (editing) { editing = false; open = null } else if (unlocked) editing = true else askUnlock = true },
                 Modifier.tourTarget("menu_edit")) {
@@ -231,15 +239,12 @@ private fun MenuLines(d: Drink, editing: Boolean, now: java.time.LocalDateTime, 
         shown.forEachIndexed { i, p ->
             val cur = p.currentPrice(now)
             Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.Bottom) {
-                Text(if (p.pourMl > 0) volumeLabel(p.pourMl) else "", Modifier.width(56.dp),
-                    style = MaterialTheme.typography.bodyMedium, color = KlubColors.Muted)
-                val title = buildString {
-                    append(d.name)
-                    p.servingName?.takeIf { it.isNotBlank() }?.let { if (isNotEmpty()) append("  "); append(it) }
-                }
-                Text(title, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-                    color = if (dim) KlubColors.Muted else MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (i == 0 && dim) Text("  nenaraženo", style = MaterialTheme.typography.labelSmall, color = KlubColors.Muted)
+                Text(if (p.pourMl > 0) volumeLabel(p.pourMl) else "", Modifier.width(46.dp),
+                    style = MaterialTheme.typography.bodyMedium, color = KlubColors.Muted, maxLines = 1)
+                val title = d.name + (p.servingName?.takeIf { it.isNotBlank() }?.let { "  $it" } ?: "")
+                // name may wrap, but never pushes the price out; leader dots fill what is left
+                Text(title, Modifier.weight(3f, fill = false), style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                    color = if (dim) KlubColors.Muted else MaterialTheme.colorScheme.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 androidx.compose.foundation.Canvas(Modifier.weight(1f).height(10.dp).padding(horizontal = 6.dp)) {
                     var x = 0f; val step = 5.dp.toPx(); val r = 0.8.dp.toPx()
                     while (x < size.width) { drawCircle(KlubColors.Muted.copy(alpha = 0.6f), r, androidx.compose.ui.geometry.Offset(x, size.height - r)); x += step }

@@ -60,9 +60,10 @@ fun KegsSection() {
 
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.padding(horizontal = 6.dp, vertical = 4.dp).tourTarget("kegs")) {
       val cols = (maxWidth / 360.dp).toInt().coerceIn(1, 4)
-      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      Column {
+       Text("SUDY  ·  vpravo plné ve sklepě", Modifier.padding(start = 4.dp, top = 4.dp), style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.5.sp), color = KlubColors.Muted)
        all.chunked(cols).forEach { rowGroups ->
-        androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
         rowGroups.forEach { g ->
             val k = active.firstOrNull { it.kegGroup == g }
             val st = stock.firstOrNull { it.kegGroup == g }
@@ -101,50 +102,34 @@ private fun KegCard(
     onTap: () -> Unit, onOrder: () -> Unit, onStockDelta: (Int) -> Unit, onEditStock: () -> Unit, onFinish: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val df = remember { SimpleDateFormat("EEEE d. M. 'v' HH:mm", Locale("cs", "CZ")) }
-    Column(modifier.fillMaxWidth().glass(RoundedCornerShape(24.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    val df = remember { SimpleDateFormat("d. M.", Locale("cs", "CZ")) }
+    var menu by remember { mutableStateOf(false) }
+    val count = stock?.count ?: 0
+    val low = count < (stock?.minCount ?: 1)
+    val left = k?.let { (it.sizeLiters - it.pouredLiters).coerceAtLeast(0.0) } ?: 0.0
+    val frac = k?.let { (left / it.sizeLiters).toFloat().coerceIn(0f, 1f) } ?: 0f
+    val color = when { k == null -> KlubColors.Muted; frac < 0.1f -> KlubColors.OldDebt; frac < 0.25f -> KlubColors.OpenTab; else -> KlubColors.PaidToday }
+    Column(modifier.fillMaxWidth().clickable { menu = !menu }.padding(horizontal = 4.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            if (k != null) KegGauge(((k.sizeLiters - k.pouredLiters) / k.sizeLiters).toFloat(), Modifier.width(34.dp).height(44.dp).padding(end = 10.dp))
-            Text(group, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-            if (k != null) Text("${fmtL(k.sizeLiters)} l sud", color = KlubColors.Muted, style = MaterialTheme.typography.labelMedium)
-        }
-        if (k == null) {
-            Text("Není naražen žádný sud.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else {
-            val left = (k.sizeLiters - k.pouredLiters).coerceAtLeast(0.0)
-            val frac = (left / k.sizeLiters).toFloat().coerceIn(0f, 1f)
-            val color = when { frac < 0.1f -> KlubColors.OldDebt; frac < 0.25f -> KlubColors.OpenTab; else -> KlubColors.PaidToday }
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(fmtL(left), style = Display.copy(fontSize = 34.sp), color = color)
-                Text(" l zbývá", Modifier.padding(bottom = 6.dp), color = KlubColors.Muted)
-                Box(Modifier.weight(1f))
-                Text("≈ ${(left / 0.5).toInt()} velkých", Modifier.padding(bottom = 6.dp), color = KlubColors.Muted)
+            Column(Modifier.weight(1f)) {
+                Text(group, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
+                Text(if (k == null) "nenaraženo" else "${fmtL(k.sizeLiters)} l sud · natočeno ${k.servings.toInt()}× · od ${df.format(Date(k.tappedAt))}",
+                    style = MaterialTheme.typography.labelSmall, color = KlubColors.Muted, maxLines = 1)
             }
-            // Keg gauge
-            Box(Modifier.fillMaxWidth().height(14.dp).clip(RoundedCornerShape(7.dp)).background(KlubColors.SurfaceHigh)) {
-                Box(Modifier.fillMaxHeight().fillMaxWidth(frac).clip(RoundedCornerShape(7.dp))
-                    .background(Brush.horizontalGradient(listOf(color.copy(alpha = 0.7f), color))))
-            }
-            Text("Naraženo ${df.format(Date(k.tappedAt))} · natočeno ${fmtL(k.pouredLiters)} l (${k.servings.toInt()}×)",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (frac < 0.1f) Text("Sud dochází!", color = KlubColors.OldDebt, fontWeight = FontWeight.Bold)
+            if (k != null) Text("${fmtL(left)} l", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold), color = color)
+            Text("−", Modifier.padding(start = 8.dp).clip(RoundedCornerShape(8.dp)).clickable(enabled = count > 0) { onStockDelta(-1) }
+                .padding(horizontal = 8.dp), fontSize = 20.sp, color = KlubColors.Muted)
+            Text("$count", Modifier.clickable(onClick = onEditStock), fontWeight = FontWeight.SemiBold,
+                color = if (low) KlubColors.OpenTab else MaterialTheme.colorScheme.onSurface)
+            Text("+", Modifier.clip(RoundedCornerShape(8.dp)).clickable { onStockDelta(1) }.padding(horizontal = 8.dp), fontSize = 20.sp, color = KlubColors.Muted)
         }
-        // Cellar stock of full kegs
-        val count = stock?.count ?: 0
-        val low = count < (stock?.minCount ?: 1)
-        Row(Modifier.fillMaxWidth().glass(RoundedCornerShape(16.dp), alpha = 0.04f).padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Text("Ve sklepě", Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            TextButton({ onStockDelta(-1) }, enabled = count > 0) { Text("−", style = MaterialTheme.typography.titleLarge) }
-            Text("$count ${if (count == 1) "sud" else if (count in 2..4) "sudy" else "sudů"}",
-                Modifier.clickable(onClick = onEditStock).padding(horizontal = 6.dp),
-                style = MaterialTheme.typography.titleMedium, color = if (low) KlubColors.OpenTab else MaterialTheme.colorScheme.onSurface)
-            TextButton({ onStockDelta(+1) }) { Text("+", style = MaterialTheme.typography.titleLarge) }
+        if (k != null) Box(Modifier.fillMaxWidth().height(2.dp).background(KlubColors.Hairline)) {
+            Box(Modifier.fillMaxHeight().fillMaxWidth(frac).background(color))
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (menu) Row {
             TextButton(onTap) { Text(if (k == null) "Narazit sud" else "Narazit nový", color = KlubColors.Gold) }
-            TextButton(onOrder) { Text("Objednat") }
-            if (k != null) TextButton(onFinish) { Text("Dopito – bez sudu", color = KlubColors.Muted) }
+            TextButton(onOrder) { Text("Objednat", color = KlubColors.Muted) }
+            if (k != null) TextButton(onFinish) { Text("Dopito", color = KlubColors.Muted) }
         }
     }
 }
