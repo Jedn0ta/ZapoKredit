@@ -235,6 +235,7 @@ private fun Section(title: String, open: Boolean, onToggle: () -> Unit, content:
 }
 
 /** Own favourites (empty = automatic) and "Klasika" combos of one member. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FavoritesEditor(memberId: Long) {
     val repo = rememberRepo()
