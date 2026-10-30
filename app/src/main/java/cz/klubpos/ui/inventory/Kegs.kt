@@ -131,7 +131,7 @@ private fun KegCard(
         }
         // Cellar stock of full kegs
         val count = stock?.count ?: 0
-        val low = count <= (stock?.minCount ?: 1)
+        val low = count < (stock?.minCount ?: 1)
         Row(Modifier.fillMaxWidth().glass(RoundedCornerShape(16.dp), alpha = 0.04f).padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Text("Ve sklepě", Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -196,8 +196,8 @@ private fun KegStockDialog(group: String, count: Int, minCount: Int, onDismiss: 
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Stepper("Plných sudů", c) { c = it.coerceAtLeast(0) }
-                Stepper("Objednat při", m) { m = it.coerceAtLeast(0) }
-                Text("Když počet klesne na „Objednat při“, sud se sám přidá do nákupního seznamu.",
+                Stepper("Cílový stav", m) { m = it.coerceAtLeast(0) }
+                Text("Kolik plných sudů chceš mít ve sklepě. Objednávka doplní rozdíl.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },

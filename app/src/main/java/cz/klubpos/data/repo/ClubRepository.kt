@@ -136,6 +136,8 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
                     amount = Math.round(unit * qty), visitId = visitId,
                 )
             )
+            // new stock: take from the linked stock item (bottle → fraction by volume, piece → 1)
+            p.stockItemId?.let { sid -> db.stockItems().get(sid)?.let { si -> db.stockItems().adjust(sid, -qty * si.perServing(p)) } }
             if (p.trackStock) {
                 val d = qty * p.stockPerServing()
                 db.products().adjustStock(p.id, -d)
@@ -243,6 +245,7 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
         )
         val pid = e.productId
         val vp = pid?.let { db.products().get(it) }
+        vp?.stockItemId?.let { sid -> db.stockItems().get(sid)?.let { si -> db.stockItems().adjust(sid, e.quantity * si.perServing(vp)) } }
         if (pid != null && vp?.trackStock == true) {
             val d = e.quantity * vp.stockPerServing()
             db.products().adjustStock(pid, d)
@@ -297,19 +300,62 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
         db.shopping().insert(ShoppingItem(productId = p.id, name = p.name, quantity = suggestedQty(p), unit = p.unit))
     }
 
-    /** Adds every product under its minimum that isn't on the list yet. Returns how many were added. */
+    /** One line of the order: what to buy to reach the target stock. */
+    data class OrderLine(val name: String, val qty: Double, val unit: String, val supplierId: Long?, val stockItemId: Long?, val kegGroup: String?)
+
+    /** Everything below its target stock (stock items + kegs in the cellar), rounded up to whole containers. */
+    suspend fun computeOrder(): List<OrderLine> {
+        val items = db.stockItems().allActive().filter { it.target > 0 && it.qty < it.target }.map {
+            OrderLine(it.name, kotlin.math.ceil(it.target - it.qty), it.unitLabel, it.supplierId, it.id, null)
+        }
+        val kegs = db.kegs().observeStock().first().filter { it.minCount > 0 && it.count < it.minCount }.map {
+            OrderLine("Sud ${it.kegGroup}", (it.minCount - it.count).toDouble(), "sud ${fmtL(it.sizeLiters)} l", null, null, it.kegGroup)
+        }
+        return items + kegs
+    }
+
+    /** Fill the shopping list up to target stock. Returns how many lines were added. */
     suspend fun generateShoppingList(): Int = db.withTransaction {
+        val open = db.shopping().observeAll().first().filter { !it.done }
         var added = 0
-        for (p in db.products().lowStock()) {
-            if (db.shopping().openForProduct(p.id) == null) {
-                db.shopping().insert(ShoppingItem(productId = p.id, name = p.name, quantity = suggestedQty(p), unit = p.unit))
-                added++
+        for (l in computeOrder()) {
+            val already = open.firstOrNull { (l.stockItemId != null && it.stockItemId == l.stockItemId) || it.name == l.name }
+            if (already != null) {
+                if (already.quantity < l.qty) db.shopping().update(already.copy(quantity = l.qty))
+                continue
             }
+            db.shopping().insert(ShoppingItem(name = l.name, quantity = l.qty, unit = l.unit, stockItemId = l.stockItemId, supplierId = l.supplierId))
+            added++
         }
         added
     }
 
-    /** Put a product on the shopping list (no-op if it is already there). Returns false if it was already listed. */
+    // ---------- Stock items ----------
+
+    fun stockItems() = db.stockItems().observeActive()
+    suspend fun linkedProducts(stockItemId: Long) = db.stockItems().linkedProducts(stockItemId)
+
+    /** Create / update a stock item and set which menu servings take from it. */
+    suspend fun saveStockItem(item: cz.klubpos.data.db.entity.StockItem, linkedProductIds: List<Long>) = db.withTransaction {
+        val id = if (item.id == 0L) db.stockItems().insert(item) else { db.stockItems().update(item); item.id }
+        db.stockItems().unlinkAll(id)
+        if (linkedProductIds.isNotEmpty()) db.stockItems().link(id, linkedProductIds)
+        id
+    }
+
+    suspend fun deleteStockItem(id: Long) = db.withTransaction {
+        db.stockItems().get(id)?.let { db.stockItems().update(it.copy(active = false)) }
+        db.stockItems().unlinkAll(id)
+    }
+
+    /** Goods received: add [qty] containers. */
+    suspend fun receiveStockItem(id: Long, qty: Double) = db.stockItems().adjust(id, qty)
+
+    /** Inventura: set counted quantities (id → containers). */
+    suspend fun saveCount(counts: Map<Long, Double>) = db.withTransaction {
+        counts.forEach { (id, q) -> db.stockItems().get(id)?.let { db.stockItems().update(it.copy(qty = q.coerceAtLeast(0.0))) } }
+    }
+
     suspend fun addProductToShopping(productId: Long): Boolean {
         val p = db.products().get(productId) ?: return false
         if (db.shopping().openForProduct(p.id) != null) return false
@@ -325,6 +371,11 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
      * the purchased quantity is added to stock straight away.
      */
     suspend fun setShoppingDone(item: ShoppingItem, done: Boolean, receive: Boolean) = db.withTransaction {
+        if (done && receive && item.stockItemId != null) {
+            db.shopping().update(item.copy(done = true))
+            db.stockItems().adjust(item.stockItemId, item.quantity)
+            return@withTransaction
+        }
         db.shopping().update(item.copy(done = done))
         if (done && receive && item.productId != null) receiveStock(item.productId, item.quantity)
     }
@@ -352,10 +403,10 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
     }
 
     private suspend fun suggestKegIfLow(s: cz.klubpos.data.db.entity.KegStock) {
-        if (s.count > s.minCount) return
+        if (s.minCount <= 0 || s.count >= s.minCount) return
         val name = "Sud ${s.kegGroup}"
         if (db.shopping().observeAll().first().any { !it.done && it.name == name }) return
-        db.shopping().insert(ShoppingItem(name = name, quantity = 1.0, unit = "sud ${fmtL(s.sizeLiters)} l"))
+        db.shopping().insert(ShoppingItem(name = name, quantity = (s.minCount - s.count).toDouble(), unit = "sud ${fmtL(s.sizeLiters)} l"))
     }
 
     private fun fmtL(v: Double) = if (v % 1.0 == 0.0) v.toLong().toString() else v.toString()
@@ -476,6 +527,24 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
 
     suspend fun allProductsOnce() = db.products().all()
 
+    private suspend fun seedStock() {
+        val ps = db.products().all()
+        fun link(menu: String) = ps.filter { it.menuName == menu && it.kind != "SOFT_TAP" && it.kind != "DRAUGHT" }.map { it.id }
+        suspend fun add(name: String, type: String, unit: String, ml: Int, qty: Double, target: Double, loc: String, menu: String) {
+            // old-style stock on the demo products is replaced by stock items
+            ps.filter { it.menuName == menu }.forEach { db.products().update(it.copy(trackStock = false)) }
+            saveStockItem(cz.klubpos.data.db.entity.StockItem(name = name, unitType = type, unitLabel = unit, containerMl = ml,
+                qty = qty, target = target, location = loc), link(menu))
+        }
+        add("Víno bílé 0,75 l", "BOTTLE", "lahev", 750, 4.6, 6.0, "Bar", "Víno bílé")
+        add("Rum 0,7 l", "BOTTLE", "lahev", 700, 1.3, 3.0, "Bar", "Rum")
+        add("Kofola 0,33 sklo", "PIECE", "ks", 0, 18.0, 24.0, "Lednice", "Kofola")
+        add("Mattoni 0,33", "PIECE", "ks", 0, 5.0, 24.0, "Lednice", "Mattoni")
+        add("Nealko pivo 0,5", "PIECE", "ks", 0, 8.0, 12.0, "Lednice", "Nealko pivo")
+        add("Brambůrky", "PIECE", "ks", 0, 10.0, 15.0, "Sklad", "Brambůrky")
+        add("Utopenec", "PIECE", "ks", 0, 6.0, 8.0, "Sklad", "Utopenec")
+    }
+
     // ---------- Demo data ----------
 
     suspend fun seedIfEmpty() {
@@ -496,7 +565,8 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
         listOf("Jan Novák" to "Honza", "Petr Svoboda" to null, "Marie Dvořáková" to "Mája",
             "Karel Černý" to "Kája", "Eva Procházková" to null, "Tomáš Veselý" to "Tom")
             .forEach { (n, nick) -> addMember(n, nick) }
-        setKegStock("Pivo 12°", count = 3, minCount = 1, sizeLiters = 50.0)
+        seedStock()
+        setKegStock("Pivo 12°", count = 3, minCount = 2, sizeLiters = 50.0)
         setKegStock("Pivo 10°", count = 2, minCount = 1, sizeLiters = 30.0)
         tapKeg("Pivo 12°", 50.0)
         tapKeg("Pivo 10°", 30.0)
@@ -507,3 +577,7 @@ private fun Product.displayNameForLedger(): String = with(cz.klubpos.domain.Kind
     listOf(p.menuName ?: p.kegGroup ?: p.name, listOfNotNull(p.servingName?.takeIf { it.isNotBlank() },
         cz.klubpos.domain.volumeLabel(p.pourMl).takeIf { it.isNotEmpty() }).joinToString(" ")).filter { it.isNotBlank() }.joinToString(" ")
 } }
+
+/** How much of this stock item one serving of [p] uses (bottle → share by volume, otherwise 1). */
+fun cz.klubpos.data.db.entity.StockItem.perServing(p: Product): Double =
+    if (unitType == "BOTTLE" && containerMl > 0 && p.pourMl > 0) p.pourMl.toDouble() / containerMl else 1.0

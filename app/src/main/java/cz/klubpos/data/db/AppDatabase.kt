@@ -16,6 +16,8 @@ import cz.klubpos.data.db.entity.Bartender
 import cz.klubpos.data.db.entity.Keg
 import cz.klubpos.data.db.entity.Supplier
 import cz.klubpos.data.db.entity.KegStock
+import cz.klubpos.data.db.entity.StockItem
+import cz.klubpos.data.db.dao.StockItemDao
 import cz.klubpos.data.db.dao.KegDao
 import cz.klubpos.data.db.dao.SupplierDao
 import cz.klubpos.data.db.dao.BartenderDao
@@ -30,8 +32,8 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Database(
     entities = [Member::class, Product::class, Visit::class, LedgerEntry::class,
-        StockMovement::class, ShoppingItem::class, Bartender::class, Keg::class, Supplier::class, KegStock::class],
-    version = 13,
+        StockMovement::class, ShoppingItem::class, Bartender::class, Keg::class, Supplier::class, KegStock::class, StockItem::class],
+    version = 14,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -44,6 +46,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun bartenders(): BartenderDao
     abstract fun kegs(): KegDao
     abstract fun suppliers(): SupplierDao
+    abstract fun stockItems(): StockItemDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -156,13 +159,37 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** New stock: tracked products become stock items linked back to their servings. */
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `stock_items` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, " +
+                        "`unitType` TEXT NOT NULL, `unitLabel` TEXT NOT NULL, `containerMl` INTEGER NOT NULL, `qty` REAL NOT NULL, " +
+                        "`target` REAL NOT NULL, `location` TEXT NOT NULL, `supplierId` INTEGER, `active` INTEGER NOT NULL, " +
+                        "`sortOrder` INTEGER NOT NULL, `legacyProductId` INTEGER)"
+                )
+                db.execSQL("ALTER TABLE products ADD COLUMN stockItemId INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE shopping_items ADD COLUMN stockItemId INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE shopping_items ADD COLUMN supplierId INTEGER DEFAULT NULL")
+                db.execSQL(
+                    "INSERT INTO stock_items (name, unitType, unitLabel, containerMl, qty, target, location, supplierId, active, sortOrder, legacyProductId) " +
+                        "SELECT COALESCE(menuName, name), CASE WHEN bottleMl > 0 THEN 'BOTTLE' ELSE 'PIECE' END, " +
+                        "CASE WHEN bottleMl > 0 THEN 'lahev' ELSE unit END, bottleMl, stockQty, " +
+                        "CASE WHEN reorderQty > 0 THEN minStock + reorderQty ELSE minStock * 2 END, 'Sklad', NULL, 1, 0, id " +
+                        "FROM products WHERE trackStock = 1 AND active = 1"
+                )
+                db.execSQL("UPDATE products SET stockItemId = (SELECT s.id FROM stock_items s WHERE s.legacyProductId = products.id), trackStock = 0 " +
+                    "WHERE trackStock = 1 AND active = 1")
+            }
+        }
+
         /** Whole DB file is encrypted with SQLCipher (AES-256); key comes from the Android Keystore. */
         fun create(context: Context): AppDatabase {
             System.loadLibrary("sqlcipher")
             val factory = SupportOpenHelperFactory(DatabaseKeyManager.getOrCreatePassphrase(context))
             return Room.databaseBuilder(context, AppDatabase::class.java, "klubpos.db")
                 .openHelperFactory(factory)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
                 // Before first production release replace with real migrations.
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()

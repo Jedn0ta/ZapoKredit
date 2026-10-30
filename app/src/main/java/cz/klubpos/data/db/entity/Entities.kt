@@ -76,6 +76,8 @@ data class Product(
     @androidx.room.ColumnInfo(defaultValue = "NULL") val menuName: String? = null,
     /** Optional name of the serving size (e.g. "šnyt", "mlíko"). */
     @androidx.room.ColumnInfo(defaultValue = "NULL") val servingName: String? = null,
+    /** Stock item this serving takes from when sold (bottle: pourMl, piece: 1). */
+    @androidx.room.ColumnInfo(defaultValue = "NULL") val stockItemId: Long? = null,
 ) {
     /** Stock change for selling [qty] servings (fraction of a bottle for poured drinks). */
     fun stockPerServing(): Double = if (bottleMl > 0 && pourMl > 0) pourMl.toDouble() / bottleMl else 1.0
@@ -169,6 +171,10 @@ data class ShoppingItem(
     val unit: String = "ks",
     val done: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
+    /** Linked stock item – ticking "koupeno" adds the quantity to it. */
+    @androidx.room.ColumnInfo(defaultValue = "NULL") val stockItemId: Long? = null,
+    /** Supplier to order from (for grouping / sending). */
+    @androidx.room.ColumnInfo(defaultValue = "NULL") val supplierId: Long? = null,
 )
 
 /** Staff member who logs in with a PIN. PIN is stored only as a salted PBKDF2 hash. */
@@ -210,4 +216,29 @@ data class KegStock(
     val count: Int = 0,
     val minCount: Int = 1,          // at or below → keg goes on the shopping list
     val sizeLiters: Double = 50.0,  // usual keg size for this beer
+)
+
+/**
+ * Something physically on stock (separate from the drink menu): a bottle of rum, Kofola 0,33 sklo, chips…
+ * Quantity is in containers (bottles / pieces), fractions = open bottle.
+ */
+@Entity(tableName = "stock_items")
+data class StockItem(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    /** BOTTLE (poured from, ml capacity) or PIECE (sold whole). */
+    val unitType: String = "PIECE",
+    /** Shown unit: "lahev", "ks", "balení"… */
+    val unitLabel: String = "ks",
+    /** Bottle capacity in ml (BOTTLE only). */
+    val containerMl: Int = 0,
+    val qty: Double = 0.0,
+    /** Target stock ("cílový stav"): orders fill up to this. 0 = don't order automatically. */
+    val target: Double = 0.0,
+    val location: String = "Sklad",
+    val supplierId: Long? = null,
+    val active: Boolean = true,
+    val sortOrder: Int = 0,
+    /** Source product when migrated from the old stock (bookkeeping only). */
+    val legacyProductId: Long? = null,
 )

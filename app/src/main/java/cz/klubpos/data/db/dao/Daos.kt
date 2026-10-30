@@ -9,6 +9,7 @@ import cz.klubpos.data.db.entity.Bartender
 import cz.klubpos.data.db.entity.Keg
 import cz.klubpos.data.db.entity.Supplier
 import cz.klubpos.data.db.entity.KegStock
+import cz.klubpos.data.db.entity.StockItem
 import cz.klubpos.data.db.entity.Member
 import cz.klubpos.data.db.entity.Product
 import cz.klubpos.data.db.entity.ShoppingItem
@@ -248,4 +249,18 @@ interface SupplierDao {
     @Update suspend fun update(s: Supplier)
     @Query("DELETE FROM suppliers WHERE id = :id") suspend fun delete(id: Long)
     @Query("SELECT * FROM suppliers ORDER BY name COLLATE NOCASE") fun observeAll(): Flow<List<Supplier>>
+}
+
+@Dao
+interface StockItemDao {
+    @Insert suspend fun insert(s: StockItem): Long
+    @Update suspend fun update(s: StockItem)
+    @Query("SELECT * FROM stock_items WHERE id = :id") suspend fun get(id: Long): StockItem?
+    @Query("SELECT * FROM stock_items WHERE active = 1 ORDER BY location COLLATE NOCASE, sortOrder, name COLLATE NOCASE")
+    fun observeActive(): Flow<List<StockItem>>
+    @Query("SELECT * FROM stock_items WHERE active = 1") suspend fun allActive(): List<StockItem>
+    @Query("UPDATE stock_items SET qty = qty + :delta WHERE id = :id") suspend fun adjust(id: Long, delta: Double)
+    @Query("UPDATE products SET stockItemId = NULL WHERE stockItemId = :id") suspend fun unlinkAll(id: Long)
+    @Query("UPDATE products SET stockItemId = :id WHERE id IN (:productIds)") suspend fun link(id: Long, productIds: List<Long>)
+    @Query("SELECT * FROM products WHERE stockItemId = :id AND active = 1") suspend fun linkedProducts(id: Long): List<Product>
 }
