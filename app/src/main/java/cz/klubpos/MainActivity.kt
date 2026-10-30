@@ -199,7 +199,7 @@ private fun AppNav() {
             }
             composable(Dest.INVENTORY.route) { InventoryScreen() }
             composable(Dest.SHOPPING.route) { ShoppingScreen() }
-            composable(Dest.PRODUCTS.route) { ProductsScreen() }
+            composable(Dest.PRODUCTS.route) { cz.klubpos.ui.products.DrinkMenuScreen() }
             composable(Dest.SETTINGS.route) { SettingsScreen(onStartTour = { tour.start() }) }
         }
     }

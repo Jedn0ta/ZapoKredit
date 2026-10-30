@@ -146,6 +146,7 @@ interface ProductDao {
     @Update suspend fun update(p: Product)
     @Query("SELECT * FROM products WHERE id = :id") suspend fun get(id: Long): Product?
     @Query("SELECT * FROM products") suspend fun all(): List<Product>
+    @Query("SELECT * FROM products WHERE active = 1 AND COALESCE(menuName, name) = :menu") suspend fun servingsOf(menu: String): List<Product>
     @Query("UPDATE products SET sortOrder = :order WHERE id = :id") suspend fun setOrder(id: Long, order: Int)
     @Query("SELECT * FROM products WHERE active = 1 ORDER BY category, sortOrder, name COLLATE NOCASE")
     fun observeActive(): Flow<List<Product>>
@@ -234,6 +235,7 @@ interface KegDao {
     @Query("SELECT * FROM keg_stock WHERE kegGroup = :group") suspend fun stock(group: String): KegStock?
     @androidx.room.Upsert suspend fun upsertStock(s: KegStock)
     @Query("DELETE FROM keg_stock WHERE kegGroup = :group") suspend fun deleteStock(group: String)
+    @Query("UPDATE kegs SET kegGroup = :to WHERE kegGroup = :from") suspend fun renameKegs(from: String, to: String)
     @Query("UPDATE products SET kegGroup = NULL, pourMl = 0 WHERE kegGroup = :group") suspend fun detachProducts(group: String)
 
     @Query("SELECT MAX(pourMl) FROM products WHERE kegGroup = :group")

@@ -175,7 +175,7 @@ fun ProductsScreen() {
 }
 
 @Composable
-private fun ProductDialog(p: Product, onDismiss: () -> Unit, onImage: () -> Unit, onImageFile: () -> Unit, onSave: (Product) -> Unit) {
+internal fun ProductDialog(p: Product, onDismiss: () -> Unit, onImage: () -> Unit, onImageFile: () -> Unit, onSave: (Product) -> Unit) {
     var name by remember { mutableStateOf(p.name) }
     var category by remember { mutableStateOf(p.category) }
     var price by remember { mutableStateOf(if (p.price == 0L) "" else p.price.toString()) }
@@ -188,7 +188,7 @@ private fun ProductDialog(p: Product, onDismiss: () -> Unit, onImage: () -> Unit
     fun d(s: String) = s.replace(',', '.').toDoubleOrNull() ?: 0.0
     var kind by remember { mutableStateOf(if (p.kegGroup != null) cz.klubpos.domain.Kind.DRAUGHT else cz.klubpos.domain.Kind.of(p.kind)) }
     val draught = kind == cz.klubpos.domain.Kind.DRAUGHT
-    val poured = kind == cz.klubpos.domain.Kind.POURED_ALCO || kind == cz.klubpos.domain.Kind.POURED_SOFT || kind == cz.klubpos.domain.Kind.SPIRIT
+    val poured = kind == cz.klubpos.domain.Kind.WINE || kind == cz.klubpos.domain.Kind.SOFT_TAP || kind == cz.klubpos.domain.Kind.SPIRIT
     var bottleMl by remember { mutableStateOf(if (p.bottleMl > 0) p.bottleMl.toString() else "") }
     var kegGroup by remember { mutableStateOf(p.kegGroup ?: p.name.substringBefore(" velk").substringBefore(" mal")) }
     var pourMl by remember { mutableStateOf(if (p.pourMl > 0) p.pourMl.toString() else (kind.volumes.firstOrNull()?.toString() ?: "")) }

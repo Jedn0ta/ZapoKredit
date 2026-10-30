@@ -72,6 +72,10 @@ data class Product(
     @androidx.room.ColumnInfo(defaultValue = "'OTHER'") val kind: String = "OTHER",
     /** For poured drinks / spirits: bottle size; stock is then counted in bottles. 0 = pieces. */
     @androidx.room.ColumnInfo(defaultValue = "0") val bottleMl: Int = 0,
+    /** Drink on the menu card this serving belongs to (e.g. "Plzeň 12°"); several sizes share it. */
+    @androidx.room.ColumnInfo(defaultValue = "NULL") val menuName: String? = null,
+    /** Optional name of the serving size (e.g. "šnyt", "mlíko"). */
+    @androidx.room.ColumnInfo(defaultValue = "NULL") val servingName: String? = null,
 ) {
     /** Stock change for selling [qty] servings (fraction of a bottle for poured drinks). */
     fun stockPerServing(): Double = if (bottleMl > 0 && pourMl > 0) pourMl.toDouble() / bottleMl else 1.0

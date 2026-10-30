@@ -390,6 +390,52 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
     }
     suspend fun largestPour(group: String) = db.kegs().largestPour(group) ?: 500
 
+    // ---------- Drink menu ----------
+
+    /** One serving size of a drink: id 0 = new. ml 0 = per piece. */
+    data class Serving(val id: Long, val name: String?, val ml: Int, val price: Long)
+
+    suspend fun servingsOf(menu: String) = db.products().servingsOf(menu)
+
+    /**
+     * Create or update a drink on the menu with all its serving sizes.
+     * Removed sizes are hidden (not deleted – the history keeps them).
+     */
+    suspend fun saveDrink(oldName: String?, kind: cz.klubpos.domain.Kind, name: String, servings: List<Serving>, kegSize: Double?) =
+        db.withTransaction {
+            val n = name.trim()
+            val existing = if (oldName != null) db.products().servingsOf(oldName) else emptyList()
+            val draught = kind == cz.klubpos.domain.Kind.DRAUGHT
+            servings.forEachIndexed { i, sv ->
+                val base = existing.firstOrNull { it.id == sv.id }
+                val p = (base ?: Product(name = n, price = sv.price)).copy(
+                    name = n, menuName = n, servingName = sv.name?.trim()?.ifBlank { null },
+                    pourMl = sv.ml, price = sv.price, kind = kind.code, category = kind.label,
+                    kegGroup = if (draught) n else null,
+                    trackStock = if (draught) false else (base?.trackStock ?: false),
+                    sortOrder = i, active = true,
+                )
+                if (base == null) db.products().insert(p) else db.products().update(p)
+            }
+            existing.filter { e -> servings.none { it.id == e.id } }.forEach { db.products().update(it.copy(active = false)) }
+            if (draught) {
+                if (oldName != null && oldName != n) {
+                    db.kegs().renameKegs(oldName, n)
+                    db.kegs().stock(oldName)?.let { st -> db.kegs().deleteStock(oldName); db.kegs().upsertStock(st.copy(kegGroup = n)) }
+                }
+                val st = db.kegs().stock(n)
+                if (st == null) db.kegs().upsertStock(cz.klubpos.data.db.entity.KegStock(n, count = 0, minCount = 1, sizeLiters = kegSize ?: 50.0))
+                else if (kegSize != null) db.kegs().upsertStock(st.copy(sizeLiters = kegSize))
+            }
+        }
+
+    /** Remove a drink from the menu (all sizes hidden; draught: keg tracking removed). */
+    suspend fun deleteDrink(name: String) = db.withTransaction {
+        val list = db.products().servingsOf(name)
+        list.forEach { db.products().update(it.copy(active = false)) }
+        if (list.any { it.kegGroup != null }) removeDraughtBeer(name)
+    }
+
     // ---------- Suppliers ----------
 
     fun suppliers() = db.suppliers().observeAll()
@@ -435,17 +481,17 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
     suspend fun seedIfEmpty() {
         if (db.members().count() > 0) return
         listOf(
-            Product(name = "Pivo 12° velké", category = "Čepované", price = 55, trackStock = false, kegGroup = "Pivo 12°", pourMl = 500, kind = "DRAUGHT"),
-            Product(name = "Pivo 12° malé", category = "Čepované", price = 35, trackStock = false, kegGroup = "Pivo 12°", pourMl = 300, kind = "DRAUGHT"),
-            Product(name = "Pivo 10°", category = "Čepované", price = 45, trackStock = false, kegGroup = "Pivo 10°", pourMl = 500, kind = "DRAUGHT"),
-            Product(name = "Víno bílé", category = "Rozlévané alko", price = 60, pourMl = 200, bottleMl = 750, unit = "lahev", stockQty = 6.0, minStock = 2.0, kind = "POURED_ALCO"),
-            Product(name = "Kofola točená", category = "Rozlévané nealko", price = 35, pourMl = 300, kind = "POURED_SOFT", trackStock = false),
-            Product(name = "Rum", category = "Lihoviny", price = 70, pourMl = 40, bottleMl = 700, unit = "lahev", stockQty = 3.0, minStock = 1.0, kind = "SPIRIT"),
-            Product(name = "Nealko pivo", category = "Pivo", price = 40, unit = "ks", stockQty = 8.0, minStock = 6.0),
-            Product(name = "Kofola", category = "Nealko", price = 35, unit = "ks", stockQty = 24.0, minStock = 12.0),
-            Product(name = "Minerálka", category = "Nealko", price = 30, unit = "ks", stockQty = 5.0, minStock = 12.0),
-            Product(name = "Brambůrky", category = "Jídlo", price = 40, unit = "ks", stockQty = 10.0, minStock = 5.0),
-            Product(name = "Utopenec", category = "Jídlo", price = 65, unit = "ks", stockQty = 6.0, minStock = 4.0),
+            Product(name = "Pivo 12°", menuName = "Pivo 12°", category = "Točené pivo", price = 55, trackStock = false, kegGroup = "Pivo 12°", pourMl = 500, kind = "DRAUGHT"),
+            Product(name = "Pivo 12°", menuName = "Pivo 12°", category = "Točené pivo", price = 35, trackStock = false, kegGroup = "Pivo 12°", pourMl = 300, kind = "DRAUGHT"),
+            Product(name = "Pivo 10°", menuName = "Pivo 10°", category = "Točené pivo", price = 45, trackStock = false, kegGroup = "Pivo 10°", pourMl = 500, kind = "DRAUGHT"),
+            Product(name = "Víno bílé", menuName = "Víno bílé", category = "Víno rozlévané", price = 60, pourMl = 200, bottleMl = 750, unit = "lahev", stockQty = 6.0, minStock = 2.0, kind = "WINE"),
+            Product(name = "Kofola", menuName = "Kofola", category = "Limonády točené / rozlévané", price = 35, pourMl = 300, kind = "SOFT_TAP", trackStock = false),
+            Product(name = "Rum", menuName = "Rum", category = "Lihoviny", price = 70, pourMl = 40, bottleMl = 700, unit = "lahev", stockQty = 3.0, minStock = 1.0, kind = "SPIRIT"),
+            Product(name = "Nealko pivo", menuName = "Nealko pivo", category = "Lahvové pivo", kind = "BOTTLED_BEER", pourMl = 500, price = 40, unit = "ks", stockQty = 8.0, minStock = 6.0),
+            Product(name = "Kofola", menuName = "Kofola", category = "Limonády ve skle", kind = "SOFT_BOTTLE", pourMl = 330, servingName = "sklo", price = 40, unit = "ks", stockQty = 24.0, minStock = 12.0),
+            Product(name = "Mattoni", menuName = "Mattoni", category = "Limonády ve skle", kind = "SOFT_BOTTLE", pourMl = 330, price = 30, unit = "ks", stockQty = 5.0, minStock = 12.0),
+            Product(name = "Brambůrky", menuName = "Brambůrky", category = "Ostatní", kind = "OTHER", price = 40, unit = "ks", stockQty = 10.0, minStock = 5.0),
+            Product(name = "Utopenec", menuName = "Utopenec", category = "Ostatní", kind = "OTHER", price = 65, unit = "ks", stockQty = 6.0, minStock = 4.0),
         ).forEach { db.products().insert(it) }
         listOf("Jan Novák" to "Honza", "Petr Svoboda" to null, "Marie Dvořáková" to "Mája",
             "Karel Černý" to "Kája", "Eva Procházková" to null, "Tomáš Veselý" to "Tom")
@@ -457,5 +503,7 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
     }
 }
 
-private fun Product.displayNameForLedger(): String =
-    if (pourMl > 0 && kegGroup == null) "$name ${cz.klubpos.domain.volumeLabel(pourMl)}" else name
+private fun Product.displayNameForLedger(): String = with(cz.klubpos.domain.Kind) { this@displayNameForLedger.let { p ->
+    listOf(p.menuName ?: p.kegGroup ?: p.name, listOfNotNull(p.servingName?.takeIf { it.isNotBlank() },
+        cz.klubpos.domain.volumeLabel(p.pourMl).takeIf { it.isNotEmpty() }).joinToString(" ")).filter { it.isNotBlank() }.joinToString(" ")
+} }
