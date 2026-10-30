@@ -22,6 +22,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.toOffset
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.zIndex
 
@@ -45,20 +46,27 @@ class GridReorderState(val grid: LazyGridState) {
     internal var holdDone = false
 }
 
-/** Filling ring shown on the held tile (hold-to-open). */
+/** Hold-to-open loader: a gold line runs around the tile's frame as the hold progresses. */
 @Composable
-fun HoldRing(state: GridReorderState, key: Any, modifier: Modifier = Modifier) {
-    if (state.holdKey != key || state.holdProgress <= 0.02f) return
+fun HoldRing(state: GridReorderState, key: Any, modifier: Modifier = Modifier, cornerRadius: androidx.compose.ui.unit.Dp = 24.dp) {
+    if (state.holdKey != key || state.holdProgress <= 0f) return
     androidx.compose.foundation.Canvas(modifier) {
-        val r = size.minDimension * 0.22f
-        val stroke = r * 0.22f
-        val tl = androidx.compose.ui.geometry.Offset(center.x - r, center.y - r)
-        val sz = androidx.compose.ui.geometry.Size(r * 2, r * 2)
-        drawCircle(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f), radius = r + stroke)
-        drawArc(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.25f), 0f, 360f, false, tl, sz,
-            style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
-        drawArc(androidx.compose.ui.graphics.Color(0xFFF5C451), -90f, 360f * state.holdProgress, false, tl, sz,
-            style = androidx.compose.ui.graphics.drawscope.Stroke(stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round))
+        val stroke = 5.dp.toPx()
+        val inset = stroke / 2
+        val r = cornerRadius.toPx()
+        val path = androidx.compose.ui.graphics.Path().apply {
+            addRoundRect(androidx.compose.ui.geometry.RoundRect(inset, inset, size.width - inset, size.height - inset,
+                androidx.compose.ui.geometry.CornerRadius(r - inset)))
+        }
+        val measure = androidx.compose.ui.graphics.PathMeasure().apply { setPath(path, false) }
+        val seg = androidx.compose.ui.graphics.Path()
+        measure.getSegment(0f, measure.length * state.holdProgress, seg, true)
+        // dim the tile slightly and draw the filling frame
+        drawRect(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.18f * state.holdProgress))
+        drawPath(seg, androidx.compose.ui.graphics.Color(0x66F5C451), style = androidx.compose.ui.graphics.drawscope.Stroke(stroke * 2.2f,
+            cap = androidx.compose.ui.graphics.StrokeCap.Round))
+        drawPath(seg, androidx.compose.ui.graphics.Color(0xFFF5C451), style = androidx.compose.ui.graphics.drawscope.Stroke(stroke,
+            cap = androidx.compose.ui.graphics.StrokeCap.Round))
     }
 }
 
@@ -79,6 +87,7 @@ fun Modifier.reorderableGrid(
     onDropAt: ((key: Any, rootPos: Offset) -> Boolean)? = null,
     /** If set: holding still for this long fills a ring and then calls [onLongPress] (instead of on release). */
     holdMillis: Int? = null,
+    holdSilentMillis: Int = 500,
 ): Modifier = composed {
     val haptic = LocalHapticFeedback.current
     val move by rememberUpdatedState(onMove)
@@ -92,7 +101,9 @@ fun Modifier.reorderableGrid(
         state.holdDone = false
         val start = System.currentTimeMillis()
         while (state.holdKey == key) {
-            val t = (System.currentTimeMillis() - start).toFloat() / holdMillis
+            val elapsed = System.currentTimeMillis() - start
+            // first part is silent (could be a tap or the start of a drag), then the frame fills
+            val t = ((elapsed - holdSilentMillis).toFloat() / (holdMillis - holdSilentMillis)).coerceAtLeast(0f)
             state.holdProgress = t.coerceIn(0f, 1f)
             if (t >= 1f) {
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)

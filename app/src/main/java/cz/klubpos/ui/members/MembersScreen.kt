@@ -460,7 +460,7 @@ private fun MemberGrid(
             onDrop = { onSaveOrder(local.map { it.memberId }) },
             onLongPress = { key -> local.firstOrNull { it.memberId == key }?.let(onActions) },
             onDropAt = onDropAt?.let { f -> { key, pos -> f(key as Long, pos) } },
-            holdMillis = 800),
+            holdMillis = 1500, holdSilentMillis = 500),
         columns = GridCells.Adaptive(if (horizontal) (tileDp * 1.45f).dp else tileDp.dp),
         contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
         horizontalArrangement = Arrangement.spacedBy(gap),

@@ -79,7 +79,7 @@ val TOUR_STEPS = listOf(
         "Každý člen má dlaždici. Zelené kolečko vpravo dole = In The House (je v klubu), šedé = dnes byl, ale odešel. Číslo vpravo nahoře: oranžová = dnešní útrata, červená = dluh z minula, zelená ✓ = dnes zaplaceno.\nKlepnutím otevřeš jeho účet.",
         Gesture.TAP),
     TourStep(TourScreen.MEMBERS, "member_tile", "Rychlé akce",
-        "Podrž, dokud se nezaplní kroužek: nastavení člena – barva dlaždice, VIP, Elder, kontakt, fotka nebo herní avatar, přesun na kartu, smazání.\nPodrž a táhni: přesuneš dlaždici jinam (pořadí se uloží).", Gesture.HOLD),
+        "Podrž, dokud se rámeček neoběhne dokola (1,5 s): nastavení člena – barva dlaždice, VIP, Elder, kontakt, fotka nebo herní avatar, přesun na kartu, smazání.\nPodrž a táhni: přesuneš dlaždici jinam (pořadí se uloží).", Gesture.HOLD),
     TourStep(TourScreen.MEMBERS, null, "Happy hour a akce",
         "Pruh s akcemi: zlatý Happy hour (cena v určité hodiny), 🏷 Akce (akční cena do data nebo do vyprodání) a 🎁 X+Y zdarma. Vše se nastavuje u položky v Nabídce."),
     TourStep(TourScreen.MEMBERS, "keg_strip", "Stav sudů",
