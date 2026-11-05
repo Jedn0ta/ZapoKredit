@@ -112,7 +112,7 @@ fun MemberSettingsSheet(
         val cur = repo.memberOnce(m0.id) ?: return@launch
         repo.updateMember(extra(cur.copy(
             name = name.trim().ifBlank { cur.name }, nickname = nick.trim().ifBlank { null }, note = note.trim().ifBlank { null },
-            phone = phone.trim(), email = email.trim(), tileColor = tint, vip = vip, elder = elder, avatar = avatar, jedi = jedi,
+            phone = phone.trim(), email = email.trim(), tileColor = tint, avatar = null,
         )))
     }
     fun go(i: Intent) = runCatching { context.startActivity(i) }
@@ -165,34 +165,15 @@ fun MemberSettingsSheet(
             }
 
             // ---- Vzhled ----
-            Section("Vzhled dlaždice", open = section == 2, onToggle = { section = if (section == 2) -1 else 2 }) {
+            Section("Barva a fotka", open = section == 2, onToggle = { section = if (section == 2) -1 else 2 }) {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ColorDot(null, tint == -1) { tint = -1 }
                     TILE_TINTS.forEachIndexed { i, c -> ColorDot(c, tint == i) { tint = i } }
-                }
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(vip, { vip = !vip }, label = { Text("VIP · zlatý rám") })
-                    FilterChip(elder, { elder = !elder }, label = { Text("Elder · platina") })
-                    FilterChip(jedi > 0, { jedi = if (jedi > 0) 0 else 1 }, label = { Text("Jedi · čepel") })
-                }
-                if (jedi > 0) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    cz.klubpos.ui.theme.SaberColors.forEachIndexed { i, c ->
-                        Box(Modifier.size(30.dp).clip(CircleShape).background(c)
-                            .border(if (jedi == i + 1) 3.dp else 0.dp, Color.White, CircleShape).clickable { jedi = i + 1 })
-                    }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                     SmallAction("Fotka ze souboru") { pickFile() }
                     SmallAction("Z mobilu (QR)") { qr = true }
                     if (m0.photoId != null) TextButton({ scope.launch { repo.removeMemberPhoto(m0.id) } }) { Text("Odebrat fotku", color = KlubColors.OldDebt) }
-                }
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    PIXEL_AVATARS.forEach { a ->
-                        val sel = avatar == a.id
-                        PixelAvatarImage(a, Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))
-                            .then(if (sel) Modifier.border(BorderStroke(3.dp, KlubColors.Gold), RoundedCornerShape(12.dp)) else Modifier)
-                            .clickable { avatar = if (sel) null else a.id })
-                    }
                 }
             }
 

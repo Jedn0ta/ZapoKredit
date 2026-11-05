@@ -270,14 +270,8 @@ private fun MemberTile(m: MemberStatus, since: Long? = null, modifier: Modifier 
     Box(
         modifier.fillMaxWidth().aspectRatio(if (horizontal) 1.45f else 0.82f)
             .clip(shape)
-            // whole tile finish, no outlines: Elder (platinum) > VIP (gold) > Jedi (blade colour)
-            .then(when {
-                m.elder -> Modifier.tileFinish(cz.klubpos.ui.theme.PlatinumMetal)
-                m.vip -> Modifier.tileFinish(cz.klubpos.ui.theme.GoldMetal)
-                m.jedi > 0 -> SaberColors[(m.jedi - 1).coerceIn(0, SaberColors.lastIndex)].let { c ->
-                    Modifier.tileFinish(listOf(Color.Transparent, c, Color.White, c, Color.Transparent), 0.35f) }
-                else -> Modifier
-            })
+            // debt = red band around the tile (no amount on Home)
+            .then(if (m.olderDebt > 0) Modifier.border(4.dp, KlubColors.OldDebt, shape) else Modifier)
             .clickable(onClick = onClick)
     ) {
         if (horizontal) {
@@ -328,7 +322,6 @@ private fun MemberTile(m: MemberStatus, since: Long? = null, modifier: Modifier 
         holdRing?.invoke(this)
         Column(Modifier.align(Alignment.TopStart).padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             // debt from earlier days on the left (date only in the "Dluh" view), today's tab on the right
-            if (m.olderDebt > 0) Pill(Credits.SYMBOL, KlubColors.OldDebt)
             if (m.olderDebt > 0 && since != null) Text("od " + java.text.SimpleDateFormat("d. M.", java.util.Locale("cs", "CZ")).format(java.util.Date(since)),
                 Modifier.clip(RoundedCornerShape(6.dp)).background(Color.Black.copy(alpha = 0.55f)).padding(horizontal = 6.dp, vertical = 1.dp),
                 color = Color.White, style = MaterialTheme.typography.labelSmall)

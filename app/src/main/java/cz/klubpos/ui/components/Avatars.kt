@@ -91,7 +91,7 @@ fun PixelAvatarImage(a: PixelAvatar, modifier: Modifier) {
 /** Member picture: photo → gamer avatar → initials on the tile tint. */
 @Composable
 fun MemberAvatar(photoId: String?, avatar: String?, name: String, tint: Color?, modifier: Modifier, textSize: Int = 40, showInitials: Boolean = true) {
-    val px = pixelAvatar(avatar)
+    val px: PixelAvatar? = null   // gamer avatars switched off
     when {
         photoId != null -> EncryptedImage(photoId, name, modifier, textSize)
         px != null -> PixelAvatarImage(px, modifier)
