@@ -75,7 +75,8 @@ data class MemberStatus(
 
     companion object {
         fun from(r: MemberSummaryRow): MemberStatus {
-            val todayUnpaid = (r.chargesToday - r.paymentsToday).coerceAtLeast(0)
+            // Left the club without paying ("Na futro" / Odchod) = it is debt now, not an open tab.
+            val todayUnpaid = if (r.openVisitId == null) 0L else (r.chargesToday - r.paymentsToday).coerceAtLeast(0)
                 .coerceAtMost(r.balance.coerceAtLeast(0))
             val olderDebt = (r.balance - todayUnpaid).coerceAtLeast(0)
             return MemberStatus(

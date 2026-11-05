@@ -37,6 +37,7 @@ import androidx.compose.ui.layout.boundsInRoot
 import cz.klubpos.ui.components.reorderableGrid
 import cz.klubpos.ui.components.reorderItem
 import androidx.compose.foundation.clickable
+import cz.klubpos.ui.theme.tileFinish
 import androidx.compose.material.icons.filled.Handyman
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
@@ -268,17 +269,14 @@ private fun MemberTile(m: MemberStatus, since: Long? = null, modifier: Modifier 
     val shape = RoundedCornerShape(24.dp)
     Box(
         modifier.fillMaxWidth().aspectRatio(if (horizontal) 1.45f else 0.82f)
-            // Elder (platinum) outranks VIP (gold): platinum outside, gold just inside when both
-            .then(if (m.elder) Modifier.platinumFrame(shape) else Modifier)
-            .then(if (m.vip) Modifier.padding(if (m.elder) 5.dp else 0.dp).goldFrame(if (m.elder) RoundedCornerShape(20.dp) else shape) else Modifier)
-            // Jedi blade sits innermost when combined with the metal frames
-            .then(if (m.jedi > 0) Modifier.padding(if (m.elder || m.vip) 5.dp else 0.dp)
-                .saberFrame(if (m.elder || m.vip) RoundedCornerShape(18.dp) else shape, SaberColors[(m.jedi - 1).coerceIn(0, SaberColors.lastIndex)]) else Modifier)
             .clip(shape)
+            // whole tile finish, no outlines: Elder (platinum) > VIP (gold) > Jedi (blade colour)
             .then(when {
-                m.vip || m.elder || m.jedi > 0 -> Modifier
-                selected -> Modifier.border(BorderStroke(4.dp, KlubColors.Amber), shape)
-                else -> Modifier.border(1.dp, KlubColors.Hairline, shape)
+                m.elder -> Modifier.tileFinish(cz.klubpos.ui.theme.PlatinumMetal)
+                m.vip -> Modifier.tileFinish(cz.klubpos.ui.theme.GoldMetal)
+                m.jedi > 0 -> SaberColors[(m.jedi - 1).coerceIn(0, SaberColors.lastIndex)].let { c ->
+                    Modifier.tileFinish(listOf(Color.Transparent, c, Color.White, c, Color.Transparent), 0.35f) }
+                else -> Modifier
             })
             .clickable(onClick = onClick)
     ) {
@@ -330,7 +328,7 @@ private fun MemberTile(m: MemberStatus, since: Long? = null, modifier: Modifier 
         holdRing?.invoke(this)
         Column(Modifier.align(Alignment.TopStart).padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             // debt from earlier days on the left (date only in the "Dluh" view), today's tab on the right
-            if (m.olderDebt > 0) Pill(Credits.format(m.olderDebt), KlubColors.OldDebt)
+            if (m.olderDebt > 0) Pill(Credits.SYMBOL, KlubColors.OldDebt)
             if (m.olderDebt > 0 && since != null) Text("od " + java.text.SimpleDateFormat("d. M.", java.util.Locale("cs", "CZ")).format(java.util.Date(since)),
                 Modifier.clip(RoundedCornerShape(6.dp)).background(Color.Black.copy(alpha = 0.55f)).padding(horizontal = 6.dp, vertical = 1.dp),
                 color = Color.White, style = MaterialTheme.typography.labelSmall)

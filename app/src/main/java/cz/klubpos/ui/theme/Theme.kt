@@ -255,3 +255,16 @@ fun Modifier.saberFrame(shape: Shape, color: Color, width: Dp = 3.dp): Modifier 
             drawOutline(outline = outline, color = Color.White.copy(alpha = 0.95f), style = Stroke(width = px * 0.8f))
         }
 }
+
+/** Whole-tile metal / colour finish (no outline): a tinted sheen over the tile that shifts with device tilt. */
+fun Modifier.tileFinish(colors: List<Color>, alpha: Float = 0.42f): Modifier = composed {
+    val tilt = cz.klubpos.ui.components.LocalTilt.current
+    this.drawWithContent {
+        drawContent()
+        val shift = (tilt.x * 0.5f + 0.5f).coerceIn(0f, 1f) * size.width
+        drawRect(androidx.compose.ui.graphics.Brush.linearGradient(colors.map { it.copy(alpha = alpha) },
+            start = androidx.compose.ui.geometry.Offset(-size.width + shift, 0f),
+            end = androidx.compose.ui.geometry.Offset(shift + size.width, size.height)),
+            blendMode = androidx.compose.ui.graphics.BlendMode.Screen)
+    }
+}
