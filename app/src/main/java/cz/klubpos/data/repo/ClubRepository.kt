@@ -38,11 +38,8 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
         kotlinx.coroutines.flow.combine(db.ledger().observeEverything(), db.bartenders().observeAll()) { all, bs ->
             val voided = all.mapNotNull { it.voidsEntryId }.toSet()
             all.filter { it.voidsEntryId == null && it.id !in voided }.groupBy { it.memberId }.mapNotNull { (mid, es) ->
-                val balance = es.sumOf { it.amount }
-                if (balance <= 0) return@mapNotNull null
-                var acc = 0L
-                val oldest = es.filter { it.amount > 0 }.sortedByDescending { it.createdAt }.firstOrNull { acc += it.amount; acc >= balance }
-                    ?: es.filter { it.amount > 0 }.minByOrNull { it.createdAt } ?: return@mapNotNull null
+                val since = cz.klubpos.domain.Payments.debtSince(es.map { it.createdAt to it.amount }) ?: return@mapNotNull null
+                val oldest = es.first { it.amount > 0 && it.createdAt == since }
                 mid to DebtInfo(oldest.createdAt, bs.firstOrNull { it.id == oldest.bartenderId }?.name)
             }.toMap()
         }

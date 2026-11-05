@@ -319,8 +319,8 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
     }
     if (showPay && st != null) PaySheet(st, member?.nickname ?: member?.name ?: "", settings.account, settings.clubName, payPreset,
         onDismiss = { showPay = false }) { amount, leave, method ->
-        scope.launch { repo.pay(memberId, amount, leave, method) }
-        showPay = false; onBack()
+        showPay = false
+        scope.launch { repo.pay(memberId, amount, leave, method); onBack() }
     }
     if (confirmLeave) AlertDialog(
         onDismissRequest = { confirmLeave = false },
@@ -687,10 +687,11 @@ private fun PaySheet(
     // null = not typed yet → default follows live status (today's spend, or the whole debt).
     var amountText by remember { mutableStateOf<String?>(null) }
     // which quick choice is active: ORDER / TODAY / ALL, null = typed by hand
-    var choice by remember { mutableStateOf<String?>(if (preset != null) "ORDER" else if (st.todayUnpaid > 0) "TODAY" else "ALL") }
-    val amount = amountText ?: when (choice) {
-        "ORDER" -> preset ?: 0; "TODAY" -> st.todayUnpaid; else -> st.balance.coerceAtLeast(0)
-    }.toString()
+    // null = follow the default (order → today → whole debt) of the LIVE status, so a just-written order is included
+    var picked by remember { mutableStateOf<String?>(null) }
+    val options = cz.klubpos.domain.Payments.options(st.todayUnpaid, st.balance, preset)
+    val choice: String? = if (amountText != null) null else (picked?.takeIf { k -> options.any { it.key == k } } ?: cz.klubpos.domain.Payments.defaultKey(options))
+    val amount = amountText ?: cz.klubpos.domain.Payments.amount(options, choice, null).toString()
     var leave by remember { mutableStateOf(st.inClub && preset == null) }
     var method by remember { mutableStateOf("CASH") }
     var received by remember { mutableStateOf<Long?>(null) }   // cash handed over
@@ -706,9 +707,9 @@ private fun PaySheet(
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (preset != null) QuickAmount("Objednávka $preset", Modifier.weight(1f), choice == "ORDER") { choice = "ORDER"; amountText = null; received = null }
-                if (st.todayUnpaid > 0) QuickAmount("Dnešek ${st.todayUnpaid}", Modifier.weight(1f), choice == "TODAY") { choice = "TODAY"; amountText = null; received = null }
-                if (st.balance > st.todayUnpaid) QuickAmount("Celý dluh ${st.balance}", Modifier.weight(1f), choice == "ALL") { choice = "ALL"; amountText = null; received = null }
+                options.forEach { o ->
+                    QuickAmount("${o.label} ${o.amount}", Modifier.weight(1f), choice == o.key) { picked = o.key; amountText = null; received = null }
+                }
             }
             Segmented(listOf("Hotově", "QR platba"), if (method == "CASH") 0 else 1) { method = if (it == 0) "CASH" else "QR" }
 
@@ -725,13 +726,13 @@ private fun PaySheet(
                 Keypad(Modifier.fillMaxWidth(),
                     onDigit = { d ->
                         if (editingReceived) received = ((received ?: 0).toString().trimStart('0') + d).take(7).toLong()
-                        else { amountText = ((if (amountText == null) "" else amount) + d).trimStart('0').take(7); choice = null }
+                        else amountText = ((amountText ?: "") + d).trimStart('0').take(7)
                     },
                     onBack = {
                         if (editingReceived) received = (received ?: 0).toString().dropLast(1).toLongOrNull() ?: 0
-                        else { amountText = amount.dropLast(1); choice = null }
+                        else amountText = amount.dropLast(1)
                     },
-                    onClear = { if (editingReceived) received = 0 else { amountText = ""; choice = null } })
+                    onClear = { if (editingReceived) received = 0 else amountText = "" })
                 received?.let { r ->
                     val change = r - value
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))

@@ -76,9 +76,7 @@ data class MemberStatus(
     companion object {
         fun from(r: MemberSummaryRow): MemberStatus {
             // Left the club without paying ("Na futro" / Odchod) = it is debt now, not an open tab.
-            val todayUnpaid = if (r.openVisitId == null) 0L else (r.chargesToday - r.paymentsToday).coerceAtLeast(0)
-                .coerceAtMost(r.balance.coerceAtLeast(0))
-            val olderDebt = (r.balance - todayUnpaid).coerceAtLeast(0)
+            val (todayUnpaid, olderDebt) = Payments.split(r.balance, r.chargesToday, r.paymentsToday, present = r.openVisitId != null)
             return MemberStatus(
                 memberId = r.id,
                 name = r.name,
@@ -89,7 +87,7 @@ data class MemberStatus(
                 todaySpend = r.chargesToday,
                 todayUnpaid = todayUnpaid,
                 olderDebt = olderDebt,
-                paidToday = r.chargesToday > 0 && r.paymentsToday >= r.chargesToday,
+                paidToday = Payments.paidToday(r.chargesToday, r.paymentsToday),
                 vip = r.vip,
                 page = r.page,
                 tileColor = r.tileColor,

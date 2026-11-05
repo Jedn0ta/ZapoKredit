@@ -64,7 +64,8 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           chmod +x gradlew
           set -o pipefail
-          ./gradlew assembleRelease --stacktrace -PversionName="$VERSION" -PversionCode="${{ github.run_number }}" 2>&1 | tee build.log
+          ./gradlew testPosReleaseUnitTest --stacktrace 2>&1 | tee build.log
+          ./gradlew assembleRelease --stacktrace -PversionName="$VERSION" -PversionCode="${{ github.run_number }}" 2>&1 | tee -a build.log
           mkdir -p dist
           cp app/build/outputs/apk/pos/release/app-pos-release.apk "dist/ZapoKredit-$VERSION.apk"
           cp app/build/outputs/apk/klic/release/app-klic-release.apk "dist/ZapoKredit-Klic-$VERSION.apk"
