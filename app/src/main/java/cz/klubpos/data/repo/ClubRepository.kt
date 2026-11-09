@@ -24,6 +24,24 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
     var onPayment: ((Long, Long, Long, Long) -> Unit)? = null
     fun eetDao() = db.eet()
 
+    // ---------- Tables & preparation queue (waiters, PC) ----------
+
+    /** Account of table [no] ("Stůl 5"); created on first use. Opens a visit (the table is occupied). */
+    suspend fun tableMember(no: Int): Long {
+        val name = "Stůl $no"
+        val id = db.members().tableByName(name)?.id
+            ?: db.members().insert(Member(name = name, isTable = true, page = -1, sortOrder = no))
+        openVisit(id)
+        return id
+    }
+
+    fun prepOrders(since: Long) = db.prepOrders().observeRecent(since)
+    suspend fun prepOrdersNow(since: Long) = db.prepOrders().recent(since)
+    suspend fun addPrepOrder(o: cz.klubpos.data.db.entity.PrepOrder) = db.prepOrders().insert(o)
+    suspend fun setPrepStatus(id: Long, status: String) = db.prepOrders().setStatus(id, status, System.currentTimeMillis())
+    suspend fun memberOnce2(id: Long) = db.members().get(id)
+    suspend fun ledgerOnce(memberId: Long) = db.ledger().observeForMember(memberId).first()
+
 
     // ---------- Bartenders / session ----------
 

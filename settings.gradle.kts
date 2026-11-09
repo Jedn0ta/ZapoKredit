@@ -20,4 +20,6 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "KlubPOS"
-include(":app")
+// ZK_DESKTOP_ONLY=1 (Windows build in CI): skip the Android app, it needs the Android SDK
+if (System.getenv("ZK_DESKTOP_ONLY") == null) include(":app")
+include(":shared", ":desktop")

@@ -17,10 +17,11 @@ class KlubPosApp : Application() {
         }
     }
     val eet: cz.klubpos.eet.EetService by lazy { cz.klubpos.eet.EetService(this) }
+    val lan: cz.klubpos.lan.LanHub by lazy { cz.klubpos.lan.LanHub(this) }
 
     override fun onCreate() {
         super.onCreate()
         // EET: retry anything that could not be sent (no internet / server down)
-        kotlinx.coroutines.MainScope().launch { repository; eet.retryLoop() }
+        if (BuildConfig.FLAVOR == "pos") kotlinx.coroutines.MainScope().launch { repository; eet.retryLoop() }
     }
 }

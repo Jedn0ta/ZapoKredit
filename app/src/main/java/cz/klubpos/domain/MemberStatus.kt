@@ -48,6 +48,7 @@ data class MemberStatus(
     val jedi: Int = 0,
     /** Was in the club today (also after leaving) – grey dot. */
     val visitedToday: Boolean = false,
+    val isTable: Boolean = false,
 ) {
     /** Newcomer = joined less than [days] days ago. */
     fun isNewbie(days: Int, now: Long = System.currentTimeMillis()) = days > 0 && now - createdAt < days * 86_400_000L
@@ -95,6 +96,7 @@ data class MemberStatus(
                 avatar = r.avatar,
                 jedi = r.jedi,
                 visitedToday = r.visitedToday,
+                isTable = r.isTable,
                 createdAt = r.createdAt,
             )
         }

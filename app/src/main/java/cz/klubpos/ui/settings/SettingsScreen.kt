@@ -143,6 +143,8 @@ fun SettingsScreen(onStartTour: () -> Unit = {}) {
                 }
             }
 
+            SettingsHeader("Číšníci a PC", "Objednávky z mobilů číšníků a pokladna na počítači přes Wi-Fi.")
+            LanSettings()
             SettingsHeader("EET 2.0", "Evidence tržeb: každá platba se odešle Finanční správě. Nejdřív vyzkoušej v testovacím prostředí.")
             EetSettings()
             SettingsHeader("Home a členové", "Vzhled hlavní obrazovky, karty a štítek pro nováčky.")

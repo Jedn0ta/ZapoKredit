@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Waiter app: talks to the register on the local network over plain HTTP.
+     The content itself is AES-GCM encrypted with the club code (see shared Lan.kt). -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

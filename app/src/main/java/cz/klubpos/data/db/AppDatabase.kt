@@ -32,13 +32,14 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Database(
     entities = [Member::class, Product::class, Visit::class, LedgerEntry::class,
-        StockMovement::class, ShoppingItem::class, Bartender::class, Keg::class, Supplier::class, KegStock::class, StockItem::class, cz.klubpos.data.db.entity.EetRecord::class],
-    version = 15,
+        StockMovement::class, ShoppingItem::class, Bartender::class, Keg::class, Supplier::class, KegStock::class, StockItem::class, cz.klubpos.data.db.entity.EetRecord::class, cz.klubpos.data.db.entity.PrepOrder::class],
+    version = 16,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun members(): MemberDao
     abstract fun eet(): cz.klubpos.data.db.dao.EetDao
+    abstract fun prepOrders(): cz.klubpos.data.db.dao.PrepOrderDao
     abstract fun visits(): VisitDao
     abstract fun ledger(): LedgerDao
     abstract fun products(): ProductDao
@@ -161,6 +162,14 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         /** New stock: tracked products become stock items linked back to their servings. */
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE members ADD COLUMN isTable INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("""CREATE TABLE IF NOT EXISTS `prep_orders` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `memberId` INTEGER, `target` TEXT NOT NULL, `isTable` INTEGER NOT NULL, `itemsJson` TEXT NOT NULL,
+                    `note` TEXT, `waiter` TEXT, `status` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL)""")
+            }
+        }
         val MIGRATION_14_15 = object : Migration(14, 15) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("""CREATE TABLE IF NOT EXISTS `eet_records` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -199,7 +208,7 @@ abstract class AppDatabase : RoomDatabase() {
             val factory = SupportOpenHelperFactory(DatabaseKeyManager.getOrCreatePassphrase(context))
             return Room.databaseBuilder(context, AppDatabase::class.java, "klubpos.db")
                 .openHelperFactory(factory)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
                 // Before first production release replace with real migrations.
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()

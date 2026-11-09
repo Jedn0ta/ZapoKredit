@@ -32,6 +32,8 @@ data class Member(
     @androidx.room.ColumnInfo(defaultValue = "NULL") val avatar: String? = null,
     /** Jedi mode: 0 = off, otherwise 1-based index of the blade colour. */
     @androidx.room.ColumnInfo(defaultValue = "0") val jedi: Int = 0,
+    /** A table ("Stůl 5") – has an account like a member, but is not shown among members. */
+    @androidx.room.ColumnInfo(defaultValue = "0") val isTable: Boolean = false,
 )
 
 @Entity(tableName = "products")
@@ -264,4 +266,22 @@ data class EetRecord(
     val createdAt: Long = System.currentTimeMillis(),
     val playground: Boolean = false,
     val verification: Boolean = false,
+)
+
+
+/** An order to be prepared at the bar (sent by a waiter or the PC). Items are already on the account. */
+@androidx.room.Entity(tableName = "prep_orders")
+data class PrepOrder(
+    @androidx.room.PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val memberId: Long?,
+    val target: String,
+    val isTable: Boolean = false,
+    /** JSON list of OrderItemDto maps. */
+    val itemsJson: String,
+    val note: String? = null,
+    val waiter: String? = null,
+    /** NEW → PREPARING → DONE / CANCELLED */
+    val status: String = "NEW",
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
 )

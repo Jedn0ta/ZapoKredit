@@ -107,7 +107,7 @@ import cz.klubpos.ui.theme.KlubColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private enum class Filter(val label: String) { ALL("Vše"), IN_CLUB("Přítomní"), DEBT("Dluh") }
+private enum class Filter(val label: String) { ALL("Vše"), IN_CLUB("Přítomní"), DEBT("Dluh"), TABLES("Stoly") }
 
 /**
  * Main POS screen: grid of members.
@@ -121,7 +121,10 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
 
     var dayStart by remember { mutableLongStateOf(BusinessDay.startMillis()) }
     LaunchedEffect(Unit) { while (true) { delay(60_000); dayStart = BusinessDay.startMillis() } }
-    val members by remember(dayStart) { repo.memberStatuses(dayStart) }.collectAsState(initial = emptyList())
+    val everyone by remember(dayStart) { repo.memberStatuses(dayStart) }.collectAsState(initial = emptyList())
+    // tables ("Stůl 5", from waiters/PC) have their own filter; occupied or unpaid ones only
+    val members = remember(everyone) { everyone.filter { !it.isTable } }
+    val tables = remember(everyone) { everyone.filter { it.isTable && (it.inClub || it.balance != 0L) } }
     val debts by remember { repo.debtInfo() }.collectAsState(initial = emptyMap())
 
     var filter by remember { mutableStateOf(Filter.ALL) }
@@ -133,8 +136,8 @@ fun MembersScreen(onOpenMember: (Long) -> Unit, onEditMember: (Long) -> Unit = o
     var photoFor by remember { mutableStateOf<MemberStatus?>(null) }
     var payAllFor by remember { mutableStateOf<MemberStatus?>(null) }
 
-    val shown = members
-        .filter { when (filter) { Filter.ALL -> true; Filter.IN_CLUB -> it.inClub; Filter.DEBT -> it.olderDebt > 0 } }
+    val shown = (if (filter == Filter.TABLES) tables else members)
+        .filter { when (filter) { Filter.ALL, Filter.TABLES -> true; Filter.IN_CLUB -> it.inClub; Filter.DEBT -> it.olderDebt > 0 } }
         .filter { query.isBlank() || it.name.contains(query, true) || (it.nickname?.contains(query, true) == true) }
 
     val cfg by cz.klubpos.ui.components.rememberSettings().flow.collectAsState()

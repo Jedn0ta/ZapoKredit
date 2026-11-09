@@ -22,6 +22,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.apk.outputs.version }}
     env:
       HAS_KEY: ${{ secrets.SIGNING_KEYSTORE_BASE64 != '' }}
     steps:
@@ -50,6 +52,7 @@ jobs:
           echo "SIGNING_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
 
       - name: Build release APK
+        id: apk
         env:
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
@@ -62,13 +65,15 @@ jobs:
             VERSION="$BASE.${{ github.run_number }}"
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           chmod +x gradlew
           set -o pipefail
-          ./gradlew testPosReleaseUnitTest --stacktrace 2>&1 | tee build.log
+          ./gradlew :shared:test testPosReleaseUnitTest --stacktrace 2>&1 | tee build.log
           ./gradlew assembleRelease --stacktrace -PversionName="$VERSION" -PversionCode="${{ github.run_number }}" 2>&1 | tee -a build.log
           mkdir -p dist
           cp app/build/outputs/apk/pos/release/app-pos-release.apk "dist/ZapoKredit-$VERSION.apk"
           cp app/build/outputs/apk/klic/release/app-klic-release.apk "dist/ZapoKredit-Klic-$VERSION.apk"
+          cp app/build/outputs/apk/cisnik/release/app-cisnik-release.apk "dist/ZapoKredit-Cisnik-$VERSION.apk"
 
       - name: Commit downloaded fonts back to the repo
         if: ${{ success() && env.FONTS_ADDED == '1' && github.ref == 'refs/heads/main' }}
@@ -90,5 +95,53 @@ jobs:
           tag_name: v${{ env.VERSION }}
           name: ZapoKredit ${{ env.VERSION }}
           target_commitish: ${{ github.sha }}
-          files: dist/*.apk
+          # register APK first: older versions of the in-app updater take the first non-"Klic" APK
+          files: |
+            dist/ZapoKredit-[0-9]*.apk
+            dist/ZapoKredit-Klic-*.apk
+            dist/ZapoKredit-Cisnik-*.apk
           generate_release_notes: true
+
+  # Windows register (PC): installer .msi + portable .zip, attached to the same release
+  desktop:
+    needs: build
+    runs-on: windows-latest
+    env:
+      ZK_DESKTOP_ONLY: "1"
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v5
+
+      - name: Build Windows installer
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew :shared:test :desktop:packageMsi :desktop:createDistributable --stacktrace -PdesktopVersion="1.0.${{ github.run_number }}" 2>&1 | tee build.log
+          mkdir -p dist
+          cp desktop/build/compose/binaries/main/msi/*.msi "dist/ZapoKredit-PC-$VERSION.msi"
+
+      - name: Portable zip
+        shell: pwsh
+        run: Compress-Archive -Path desktop/build/compose/binaries/main/app/ZapoKredit -DestinationPath "dist/ZapoKredit-PC-$env:VERSION-portable.zip"
+
+      - name: Report build errors as annotations
+        if: failure()
+        shell: bash
+        run: |
+          grep -vE "^> Task|^\s*at " build.log | grep -E "^e: |What went wrong|error|Error|Could not|Caused by|^> [A-Z]" -A2 | head -80 > err.txt || true
+          echo "::error title=Desktop build errors::$(sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g' err.txt)"
+
+      - name: Attach to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          files: |
+            dist/*.msi
+            dist/*.zip

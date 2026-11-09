@@ -27,6 +27,7 @@ data class MemberSummaryRow(
     val elder: Boolean,
     val avatar: String?,
     val jedi: Int,
+    val isTable: Boolean,
     val createdAt: Long,
     val name: String,
     val nickname: String?,
@@ -41,6 +42,7 @@ data class MemberSummaryRow(
 
 @Dao
 interface MemberDao {
+    @Query("SELECT * FROM members WHERE isTable = 1 AND active = 1 AND name = :name LIMIT 1") suspend fun tableByName(name: String): Member?
     @Insert suspend fun insert(m: Member): Long
     @Update suspend fun update(m: Member)
     @Query("SELECT * FROM members WHERE id = :id") fun observe(id: Long): Flow<Member?>
@@ -54,7 +56,7 @@ interface MemberDao {
 
     @Query(
         """
-        SELECT m.id, m.sortOrder, m.vip, m.page, m.tileColor, m.elder, m.avatar, m.jedi, m.createdAt, m.name, m.nickname, m.photoId,
+        SELECT m.id, m.sortOrder, m.vip, m.page, m.tileColor, m.elder, m.avatar, m.jedi, m.isTable, m.createdAt, m.name, m.nickname, m.photoId,
           COALESCE((SELECT SUM(amount) FROM ledger l WHERE l.memberId = m.id), 0) AS balance,
           COALESCE((SELECT SUM(amount) FROM ledger l WHERE l.memberId = m.id
                     AND l.type != 'PAYMENT' AND l.createdAt >= :dayStart), 0) AS chargesToday,
@@ -277,4 +279,15 @@ interface EetDao {
     @Query("SELECT * FROM eet_records WHERE status = 'PENDING' ORDER BY id") suspend fun pending(): List<cz.klubpos.data.db.entity.EetRecord>
     @Query("SELECT * FROM eet_records ORDER BY id DESC LIMIT :limit") fun observeRecent(limit: Int = 50): Flow<List<cz.klubpos.data.db.entity.EetRecord>>
     @Query("SELECT COUNT(*) FROM eet_records WHERE status IN ('PENDING','FAILED')") fun observeOpenCount(): Flow<Int>
+}
+
+
+@Dao
+interface PrepOrderDao {
+    @Insert suspend fun insert(o: cz.klubpos.data.db.entity.PrepOrder): Long
+    @Query("UPDATE prep_orders SET status = :status, updatedAt = :at WHERE id = :id") suspend fun setStatus(id: Long, status: String, at: Long)
+    @Query("SELECT * FROM prep_orders WHERE status IN ('NEW','PREPARING') OR updatedAt >= :since ORDER BY createdAt")
+    fun observeRecent(since: Long): Flow<List<cz.klubpos.data.db.entity.PrepOrder>>
+    @Query("SELECT * FROM prep_orders WHERE status IN ('NEW','PREPARING') OR updatedAt >= :since ORDER BY createdAt")
+    suspend fun recent(since: Long): List<cz.klubpos.data.db.entity.PrepOrder>
 }

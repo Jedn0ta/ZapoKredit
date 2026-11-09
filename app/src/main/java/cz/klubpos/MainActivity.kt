@@ -62,6 +62,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
@@ -82,6 +84,7 @@ import androidx.compose.runtime.remember
 
 private enum class Dest(val route: String, val label: String, val icon: ImageVector) {
     MEMBERS("members", "Home", Icons.Default.Home),
+    ORDERS("orders", "Objednávky", Icons.Default.ReceiptLong),
     PRODUCTS("products", "Nabídka", Icons.Default.LocalBar),
     INVENTORY("inventory", "Sklad", Icons.Default.Inventory2),
     SHOPPING("shopping", "Nákup", Icons.Default.ShoppingCart),
@@ -101,8 +104,17 @@ class MainActivity : ComponentActivity() {
             } } }
             return
         }
+        if (BuildConfig.IS_WAITER_APP) {
+            // Waiter's phone: orders over Wi-Fi to the register (no local database).
+            setContent { KlubTheme { AppBackground {
+                Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) { cz.klubpos.waiter.WaiterApp() }
+            } } }
+            return
+        }
         val app = application as KlubPosApp
         val repo = app.repository
+        // Register: accept orders from waiters / the PC when switched on in Settings
+        if (app.lan.config.value.enabled) cz.klubpos.lan.LanService.start(app)
         setContent {
             KlubTheme {
                 val settings by app.settings.flow.collectAsState()
@@ -191,6 +203,27 @@ private fun AppNav() {
         }
     }
 
+    // Orders from waiters / PC: tab shown when the LAN link is on (or something is waiting), badge = new ones
+    val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as KlubPosApp
+    val lanCfg by app.lan.config.collectAsState()
+    val since = remember { System.currentTimeMillis() - 3 * 3600_000L }
+    val prep by remember { repo.prepOrders(since) }.collectAsState(initial = emptyList())
+    val newOrders = prep.count { it.status == "NEW" }
+    val dests = Dest.entries.filter { it != Dest.ORDERS || lanCfg.enabled || prep.any { o -> o.status == "NEW" || o.status == "PREPARING" } }
+    var seenMax by remember { mutableLongStateOf(-1L) }
+    var banner by remember { mutableStateOf<cz.klubpos.data.db.entity.PrepOrder?>(null) }
+    LaunchedEffect(prep) {
+        val maxId = prep.maxOfOrNull { it.id } ?: 0L
+        if (seenMax >= 0 && maxId > seenMax) {
+            banner = prep.filter { it.id > seenMax && it.status == "NEW" }.maxByOrNull { it.id }
+            if (banner != null) runCatching {
+                android.media.RingtoneManager.getRingtone(app, android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION))?.play()
+            }
+        }
+        seenMax = maxOf(seenMax, maxId)
+    }
+    LaunchedEffect(banner) { if (banner != null) { delay(10_000); banner = null } }
+
     val host: @Composable (Modifier) -> Unit = { mod ->
         NavHost(nav, startDestination = Dest.MEMBERS.route, modifier = mod) {
             composable(Dest.MEMBERS.route) { MembersScreen(onOpenMember = { nav.navigate("member/$it") }) }
@@ -198,6 +231,7 @@ private fun AppNav() {
                 MemberDetailScreen(it.arguments!!.getLong("id"), onBack = { nav.popBackStack() })
             }
             composable(Dest.INVENTORY.route) { InventoryScreen() }
+            composable(Dest.ORDERS.route) { cz.klubpos.ui.orders.OrdersScreen(onOpenMember = { nav.navigate("member/$it") }) }
             composable(Dest.SHOPPING.route) { ShoppingScreen() }
             composable(Dest.PRODUCTS.route) { cz.klubpos.ui.products.DrinkMenuScreen() }
             composable(Dest.SETTINGS.route) { SettingsScreen(onStartTour = { tour.start() }) }
@@ -213,8 +247,12 @@ private fun AppNav() {
         Row(Modifier.fillMaxSize()) {
             if (wide && chrome) NavigationRail(containerColor = Color.Transparent, header = { BartenderChip(compact = true) }) {
                 Spacer(Modifier.weight(1f))
-                Dest.entries.forEach { d ->
-                    NavigationRailItem(current == d.route, { go(d) }, icon = { Icon(d.icon, d.label) }, label = { Text(d.label) },
+                dests.forEach { d ->
+                    NavigationRailItem(current == d.route, { go(d) }, icon = {
+                        androidx.compose.material3.BadgedBox(badge = { if (d == Dest.ORDERS && newOrders > 0) androidx.compose.material3.Badge { Text("$newOrders") } }) {
+                            Icon(d.icon, d.label)
+                        }
+                    }, label = { Text(d.label) },
                         colors = NavigationRailItemDefaults.colors(indicatorColor = KlubColors.Gold.copy(alpha = 0.18f),
                             selectedIconColor = KlubColors.Gold, selectedTextColor = KlubColors.Gold))
                 }
@@ -222,7 +260,18 @@ private fun AppNav() {
             }
             Column(Modifier.weight(1f).fillMaxSize()) {
                 host(Modifier.weight(1f))
-                if (!wide && chrome) FloatingNavBar(current, onSelect = { go(it) })
+                if (!wide && chrome) FloatingNavBar(current, dests, newOrders, onSelect = { go(it) })
+            }
+        }
+        // new order banner (any screen)
+        banner?.let { o ->
+            Row(Modifier.align(Alignment.TopCenter).padding(12.dp).clip(RoundedCornerShape(18.dp)).background(KlubColors.OpenTab)
+                .clickable { banner = null; go(Dest.ORDERS) }.padding(horizontal = 18.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.ReceiptLong, null, tint = KlubColors.Ink)
+                Text("  Nová objednávka: ${o.target}" + (o.waiter?.let { " · $it" } ?: ""), color = KlubColors.Ink,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                Text("   Otevřít", color = KlubColors.Ink)
             }
         }
     }
@@ -230,17 +279,19 @@ private fun AppNav() {
 
 /** Floating glass pill with the sections; the selected one expands with its label. */
 @Composable
-private fun FloatingNavBar(current: String?, onSelect: (Dest) -> Unit) {
+private fun FloatingNavBar(current: String?, dests: List<Dest>, newOrders: Int, onSelect: (Dest) -> Unit) {
     Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp)
         .glass(RoundedCornerShape(30.dp), alpha = 0.08f).padding(6.dp),
         horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        Dest.entries.forEach { d ->
+        dests.forEach { d ->
             val sel = current == d.route
             Row(Modifier.clip(RoundedCornerShape(24.dp))
                 .then(if (sel) Modifier.background(KlubColors.GoldBrush) else Modifier)
                 .clickable { onSelect(d) }.padding(horizontal = if (sel) 16.dp else 12.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                Icon(d.icon, d.label, tint = if (sel) KlubColors.Ink else KlubColors.Muted, modifier = Modifier.size(22.dp))
+                androidx.compose.material3.BadgedBox(badge = { if (d == Dest.ORDERS && newOrders > 0) androidx.compose.material3.Badge { Text("$newOrders") } }) {
+                    Icon(d.icon, d.label, tint = if (sel) KlubColors.Ink else KlubColors.Muted, modifier = Modifier.size(22.dp))
+                }
                 AnimatedVisibility(sel) {
                     Text(d.label, Modifier.padding(start = 8.dp), color = KlubColors.Ink,
                         style = MaterialTheme.typography.labelLarge, maxLines = 1)

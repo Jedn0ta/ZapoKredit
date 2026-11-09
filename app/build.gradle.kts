@@ -34,12 +34,22 @@ android {
             dimension = "app"
             resValue("string", "app_name", "ZapoKredit")
             buildConfigField("boolean", "IS_KEY_APP", "false")
+            buildConfigField("boolean", "IS_WAITER_APP", "false")
         }
         create("klic") {
             dimension = "app"
             applicationIdSuffix = ".klic"
             resValue("string", "app_name", "ZapoKredit Klíč")
             buildConfigField("boolean", "IS_KEY_APP", "true")
+            buildConfigField("boolean", "IS_WAITER_APP", "false")
+        }
+        // Waiter's phone: takes orders and sends them over Wi-Fi to the register
+        create("cisnik") {
+            dimension = "app"
+            applicationIdSuffix = ".cisnik"
+            resValue("string", "app_name", "ZapoKredit Číšník")
+            buildConfigField("boolean", "IS_KEY_APP", "false")
+            buildConfigField("boolean", "IS_WAITER_APP", "true")
         }
     }
 
@@ -90,6 +100,7 @@ android {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
+    implementation(project(":shared"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
