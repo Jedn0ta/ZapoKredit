@@ -5,6 +5,9 @@ on:
     branches-ignore: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -20,13 +23,16 @@ jobs:
           chmod +x gradlew
           set -o pipefail
           ./gradlew :shared:test :desktop:test :app:compilePosDebugKotlin :app:compileCisnikDebugKotlin :app:compileKlicDebugKotlin --continue --stacktrace 2>&1 | tee build.log
-      - name: Upload PC screenshots
+      - name: Upload PC screenshots (pre-release "ci-screens", for review only)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: softprops/action-gh-release@v2
         with:
-          name: screens
-          path: desktop/build/screens/*.png
-          if-no-files-found: ignore
+          tag_name: ci-screens
+          name: CI screenshots (not a release)
+          prerelease: true
+          target_commitish: ${{ github.sha }}
+          files: desktop/build/screens/*.png
+          fail_on_unmatched_files: false
 
       - name: Report build errors as annotations
         if: failure()
