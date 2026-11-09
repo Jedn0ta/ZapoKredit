@@ -27,6 +27,10 @@ suspend fun <R> AppDatabase.tx(block: suspend () -> R): R = useWriterConnection 
 
 private val TRACE = System.getProperty("zk.sqltrace") != null
 
+/** Room expects androidx.sqlite.SQLiteException (e.g. @Upsert falls back to UPDATE on a unique conflict). */
+private fun sqliteError(e: java.sql.SQLException, sql: String) =
+    androidx.sqlite.SQLiteException("Error code: ${e.errorCode}, message: ${e.message} [SQL: ${sql.take(200)}]")
+
 /** androidx.sqlite driver on top of JDBC (sqlite-jdbc with encryption), so Room runs on the PC. */
 class EncryptedJdbcDriver(private val hexKey: String) : SQLiteDriver {
     override fun open(fileName: String): SQLiteConnection {
@@ -50,7 +54,7 @@ private class JdbcConnection(val c: Connection) : SQLiteConnection {
 
 private class JdbcStatement(private val conn: JdbcConnection, private val sql: String) : SQLiteStatement {
     private val ps: PreparedStatement = try { conn.c.prepareStatement(sql) }
-        catch (e: java.sql.SQLException) { throw java.sql.SQLException("${e.message} [SQL: $sql]", e) }
+        catch (e: java.sql.SQLException) { throw sqliteError(e, sql) }
     private var rs: ResultSet? = null
     private var executed = false
     private val head = sql.trimStart().take(16).uppercase()
@@ -87,7 +91,7 @@ private class JdbcStatement(private val conn: JdbcConnection, private val sql: S
             }
             val hasRows = try { ps.execute() } catch (e: java.sql.SQLException) {
                 if (TRACE) println("  !! ${e.message}")
-                throw java.sql.SQLException("${e.message} [SQL: $sql]", e)
+                throw sqliteError(e, sql)
             }
             rs = if (hasRows) ps.resultSet else null
         }
