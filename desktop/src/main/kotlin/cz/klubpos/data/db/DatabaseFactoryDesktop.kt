@@ -78,6 +78,9 @@ private class JdbcStatement(private val conn: JdbcConnection, private val sql: S
         if (TRACE) println("SQL[${Thread.currentThread().name}] ${sql.take(80)}")
         if (!executed) {
             executed = true
+            // Room rolls back "just in case" when it returns a connection to the pool; without an open
+            // transaction SQLite would fail and the connection would be lost → ignore it here.
+            if (head.startsWith("ROLLBACK") && !head.contains(" TO") && !conn.inTx) return false
             when {
                 head.startsWith("BEGIN") -> conn.inTx = true
                 head.startsWith("COMMIT") || head.startsWith("END") || (head.startsWith("ROLLBACK") && !head.contains(" TO")) -> conn.inTx = false
