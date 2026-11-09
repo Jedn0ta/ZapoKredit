@@ -81,7 +81,8 @@ tasks.test {
         showStackTraces = true
         showStandardStreams = true
     }
-    systemProperty("zk.sqltrace", "1")
+    systemProperty("zk.datadir", layout.buildDirectory.dir("test-data").get().asFile.absolutePath)
+    systemProperty("zk.screens", layout.buildDirectory.dir("screens").get().asFile.absolutePath)
 }
 
 ksp {

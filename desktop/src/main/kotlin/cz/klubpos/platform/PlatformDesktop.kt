@@ -40,6 +40,7 @@ object Platform {
     val updateRepo = "Jedn0ta/ZapoKredit"
 
     val dataDir: File by lazy {
+        System.getProperty("zk.datadir")?.let { return@lazy File(it).apply { mkdirs() } }
         val base = System.getenv("APPDATA")?.let { File(it) } ?: File(System.getProperty("user.home"), ".config")
         File(base, "ZapoKredit").apply { mkdirs() }
     }

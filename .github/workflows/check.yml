@@ -20,6 +20,14 @@ jobs:
           chmod +x gradlew
           set -o pipefail
           ./gradlew :shared:test :desktop:test :app:compilePosDebugKotlin :app:compileCisnikDebugKotlin :app:compileKlicDebugKotlin --continue --stacktrace 2>&1 | tee build.log
+      - name: Upload PC screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screens
+          path: desktop/build/screens/*.png
+          if-no-files-found: ignore
+
       - name: Report build errors as annotations
         if: failure()
         run: |
