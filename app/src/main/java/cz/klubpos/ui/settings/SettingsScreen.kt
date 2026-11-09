@@ -143,6 +143,8 @@ fun SettingsScreen(onStartTour: () -> Unit = {}) {
                 }
             }
 
+            SettingsHeader("EET 2.0", "Evidence tržeb: každá platba se odešle Finanční správě. Nejdřív vyzkoušej v testovacím prostředí.")
+            EetSettings()
             SettingsHeader("Home a členové", "Vzhled hlavní obrazovky, karty a štítek pro nováčky.")
             Row(Modifier.fillMaxWidth().glass().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Nezhasínat obrazovku", Modifier.weight(1f))

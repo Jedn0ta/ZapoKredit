@@ -20,6 +20,10 @@ import cz.klubpos.core.crypto.Pin
 import kotlin.math.ceil
 
 class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
+    /** Called after every payment is written (EET evidence). (paymentEntryId, memberId, amount Kč, time) */
+    var onPayment: ((Long, Long, Long, Long) -> Unit)? = null
+    fun eetDao() = db.eet()
+
 
     // ---------- Bartenders / session ----------
 
@@ -172,17 +176,24 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
         )
     }
 
-    suspend fun pay(memberId: Long, amount: Long, closeVisitAfter: Boolean, method: String = "CASH") = db.withTransaction {
+    suspend fun pay(memberId: Long, amount: Long, closeVisitAfter: Boolean, method: String = "CASH") {
+        val (id, at) = payTx(memberId, amount, closeVisitAfter, method)
+        onPayment?.invoke(id, memberId, amount, at)
+    }
+
+    private suspend fun payTx(memberId: Long, amount: Long, closeVisitAfter: Boolean, method: String) = db.withTransaction {
         require(amount > 0) { "Částka musí být kladná" }
-        insertEntry(
+        val at = System.currentTimeMillis()
+        val id = insertEntry(
             LedgerEntry(
                 memberId = memberId, type = EntryType.PAYMENT,
                 description = if (method == "QR") "Platba QR" else "Platba hotově",
                 unitPrice = amount, amount = -amount, method = method,
-                visitId = db.visits().openFor(memberId)?.id,
+                visitId = db.visits().openFor(memberId)?.id, createdAt = at,
             )
         )
         if (closeVisitAfter) closeVisit(memberId)
+        id to at
     }
 
     /** One line of a not-yet-written order. productId == null → custom amount. */

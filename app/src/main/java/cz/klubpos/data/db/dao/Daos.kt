@@ -267,3 +267,14 @@ interface StockItemDao {
     @Query("UPDATE products SET stockItemId = :id WHERE id IN (:productIds)") suspend fun link(id: Long, productIds: List<Long>)
     @Query("SELECT * FROM products WHERE stockItemId = :id AND active = 1") suspend fun linkedProducts(id: Long): List<Product>
 }
+
+
+@Dao
+interface EetDao {
+    @Insert suspend fun insert(r: cz.klubpos.data.db.entity.EetRecord): Long
+    @Update suspend fun update(r: cz.klubpos.data.db.entity.EetRecord)
+    @Query("SELECT * FROM eet_records WHERE id = :id") suspend fun get(id: Long): cz.klubpos.data.db.entity.EetRecord?
+    @Query("SELECT * FROM eet_records WHERE status = 'PENDING' ORDER BY id") suspend fun pending(): List<cz.klubpos.data.db.entity.EetRecord>
+    @Query("SELECT * FROM eet_records ORDER BY id DESC LIMIT :limit") fun observeRecent(limit: Int = 50): Flow<List<cz.klubpos.data.db.entity.EetRecord>>
+    @Query("SELECT COUNT(*) FROM eet_records WHERE status IN ('PENDING','FAILED')") fun observeOpenCount(): Flow<Int>
+}

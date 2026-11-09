@@ -242,3 +242,26 @@ data class StockItem(
     /** Source product when migrated from the old stock (bookkeeping only). */
     val legacyProductId: Long? = null,
 )
+
+
+/** One payment reported to EET 2.0 (evidovaná tržba) and its state. */
+@androidx.room.Entity(tableName = "eet_records")
+data class EetRecord(
+    @androidx.room.PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val paymentEntryId: Long? = null,
+    val memberId: Long? = null,
+    /** Kč, payments positive, refunds negative. */
+    val amount: Long,
+    val datTrzby: String,
+    val poradCis: String,
+    /** PENDING = waiting / retrying, OK = POK received, CHECKED = verification mode passed, FAILED = rejected (needs attention). */
+    val status: String = "PENDING",
+    val pok: String? = null,
+    val error: String? = null,
+    val warnings: String? = null,
+    val attempts: Int = 0,
+    val lastTry: Long? = null,
+    val createdAt: Long = System.currentTimeMillis(),
+    val playground: Boolean = false,
+    val verification: Boolean = false,
+)
