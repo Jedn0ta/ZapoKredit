@@ -44,7 +44,8 @@ private class JdbcConnection(val c: Connection) : SQLiteConnection {
 }
 
 private class JdbcStatement(private val conn: JdbcConnection, private val sql: String) : SQLiteStatement {
-    private val ps: PreparedStatement = conn.c.prepareStatement(sql)
+    private val ps: PreparedStatement = try { conn.c.prepareStatement(sql) }
+        catch (e: java.sql.SQLException) { throw java.sql.SQLException("${e.message} [SQL: $sql]", e) }
     private var rs: ResultSet? = null
     private var executed = false
     private val head = sql.trimStart().take(16).uppercase()
@@ -75,7 +76,7 @@ private class JdbcStatement(private val conn: JdbcConnection, private val sql: S
                 head.startsWith("BEGIN") -> conn.inTx = true
                 head.startsWith("COMMIT") || head.startsWith("END") || (head.startsWith("ROLLBACK") && !head.contains(" TO")) -> conn.inTx = false
             }
-            val hasRows = ps.execute()
+            val hasRows = try { ps.execute() } catch (e: java.sql.SQLException) { throw java.sql.SQLException("${e.message} [SQL: $sql]", e) }
             rs = if (hasRows) ps.resultSet else null
         }
         return rs?.next() ?: false
