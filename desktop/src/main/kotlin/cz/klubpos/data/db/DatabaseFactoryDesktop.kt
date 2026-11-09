@@ -25,6 +25,8 @@ fun createDesktopDatabase(file: File, key: ByteArray): AppDatabase =
 /** Transaction helper (PC version; on Android it is Room's withTransaction). */
 suspend fun <R> AppDatabase.tx(block: suspend () -> R): R = useWriterConnection { it.immediateTransaction { block() } }
 
+private val TRACE = System.getProperty("zk.sqltrace") != null
+
 /** androidx.sqlite driver on top of JDBC (sqlite-jdbc with encryption), so Room runs on the PC. */
 class EncryptedJdbcDriver(private val hexKey: String) : SQLiteDriver {
     override fun open(fileName: String): SQLiteConnection {
@@ -73,6 +75,7 @@ private class JdbcStatement(private val conn: JdbcConnection, private val sql: S
     }
 
     override fun step(): Boolean {
+        if (TRACE) println("SQL[${Thread.currentThread().name}] ${sql.take(80)}")
         if (!executed) {
             executed = true
             when {
@@ -87,5 +90,5 @@ private class JdbcStatement(private val conn: JdbcConnection, private val sql: S
 
     override fun reset() { rs?.close(); rs = null; executed = false }
     override fun clearBindings() = ps.clearParameters()
-    override fun close() { rs?.close(); ps.close() }
+    override fun close() { if (TRACE) println("CLOSE ${sql.take(40)}"); rs?.close(); ps.close() }
 }

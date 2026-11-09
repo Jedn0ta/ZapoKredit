@@ -79,7 +79,9 @@ tasks.test {
         events("failed")
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
         showStackTraces = true
+        showStandardStreams = true
     }
+    systemProperty("zk.sqltrace", "1")
 }
 
 ksp {
