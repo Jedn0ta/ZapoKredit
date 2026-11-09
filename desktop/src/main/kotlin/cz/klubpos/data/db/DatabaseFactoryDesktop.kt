@@ -64,7 +64,7 @@ private class JdbcStatement(private val conn: JdbcConnection, private val sql: S
     private fun r(): ResultSet = rs ?: error("No row")
     override fun getBlob(index: Int): ByteArray = r().getBytes(index + 1) ?: ByteArray(0)
     override fun getDouble(index: Int): Double = r().getDouble(index + 1)
-    override fun getLong(index: Int): Long = r().getLong(index + 1)
+    override fun getLong(index: Int): Long = try { r().getLong(index + 1) } catch (e: Exception) { if (TRACE) println("  !! getLong: $e"); throw e }
     override fun getText(index: Int): String = r().getString(index + 1) ?: ""
     override fun isNull(index: Int): Boolean = r().getObject(index + 1) == null
 
@@ -82,10 +82,13 @@ private class JdbcStatement(private val conn: JdbcConnection, private val sql: S
                 head.startsWith("BEGIN") -> conn.inTx = true
                 head.startsWith("COMMIT") || head.startsWith("END") || (head.startsWith("ROLLBACK") && !head.contains(" TO")) -> conn.inTx = false
             }
-            val hasRows = try { ps.execute() } catch (e: java.sql.SQLException) { throw java.sql.SQLException("${e.message} [SQL: $sql]", e) }
+            val hasRows = try { ps.execute() } catch (e: java.sql.SQLException) {
+                if (TRACE) println("  !! ${e.message}")
+                throw java.sql.SQLException("${e.message} [SQL: $sql]", e)
+            }
             rs = if (hasRows) ps.resultSet else null
         }
-        return rs?.next() ?: false
+        return try { rs?.next() ?: false } catch (e: Exception) { if (TRACE) println("  !! next: ${e.message}"); throw e }
     }
 
     override fun reset() { rs?.close(); rs = null; executed = false }
