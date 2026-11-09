@@ -21,6 +21,7 @@ interface KvStore {
         fun putLong(key: String, value: Long): Editor
         fun putFloat(key: String, value: Float): Editor
         fun remove(key: String): Editor
+        fun clear(): Editor
         fun apply()
         fun commit(): Boolean
     }

@@ -55,6 +55,7 @@ private class AndroidKv(private val p: SharedPreferences) : KvStore {
         override fun putLong(key: String, value: Long) = also { e.putLong(key, value) }
         override fun putFloat(key: String, value: Float) = also { e.putFloat(key, value) }
         override fun remove(key: String) = also { e.remove(key) }
+        override fun clear() = also { e.clear() }
         override fun apply() = e.apply()
         override fun commit() = e.commit()
     }

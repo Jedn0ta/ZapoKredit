@@ -58,7 +58,7 @@ fun LanSettings() {
         if (cfg.enabled) {
             if (code == null) Text("Tablet není připojený k Wi-Fi.", color = KlubColors.OldDebt)
             else Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                val bmp = remember(code) { QrGenerator.bitmap(code.text(), 480).asImageBitmap() }
+                val bmp = remember(code) { cz.klubpos.platform.qrImage(code.text(), 480) }
                 Image(bmp, "QR pro připojení", Modifier.size(170.dp).clip(RoundedCornerShape(12.dp)))
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("Číšník: v aplikaci ZapoKredit Číšník naskenuj tento QR.", style = MaterialTheme.typography.bodySmall)

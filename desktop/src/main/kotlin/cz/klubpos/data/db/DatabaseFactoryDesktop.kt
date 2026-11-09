@@ -40,7 +40,6 @@ class EncryptedJdbcDriver(private val hexKey: String) : SQLiteDriver {
 private class JdbcConnection(val c: Connection) : SQLiteConnection {
     @Volatile var inTx = false
     override fun prepare(sql: String): SQLiteStatement = JdbcStatement(this, sql)
-    override fun inTransaction(): Boolean = inTx
     override fun close() = c.close()
 }
 

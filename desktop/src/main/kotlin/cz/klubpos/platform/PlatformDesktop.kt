@@ -104,15 +104,17 @@ private class FileKv(private val file: File) : KvStore {
     private inner class Ed : KvStore.Editor {
         private val changes = LinkedHashMap<String, Any?>()
         private val removed = HashSet<String>()
+        private var clearAll = false
         override fun putString(key: String, value: String?) = also { if (value == null) removed += key else changes[key] = value }
         override fun putBoolean(key: String, value: Boolean) = also { changes[key] = value }
         override fun putInt(key: String, value: Int) = also { changes[key] = value.toLong() }
         override fun putLong(key: String, value: Long) = also { changes[key] = value }
         override fun putFloat(key: String, value: Float) = also { changes[key] = value.toDouble() }
         override fun remove(key: String) = also { removed += key }
+        override fun clear() = also { clearAll = true }
         override fun apply() { commit() }
         override fun commit(): Boolean = synchronized(this@FileKv) {
-            removed.forEach { map.remove(it) }; map.putAll(changes); runCatching { save() }.isSuccess
+            if (clearAll) map.clear(); removed.forEach { map.remove(it) }; map.putAll(changes); runCatching { save() }.isSuccess
         }
     }
 }

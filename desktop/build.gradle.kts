@@ -64,6 +64,7 @@ dependencies {
     ksp("androidx.room:room-compiler:2.7.0")
     implementation("io.github.willena:sqlite-jdbc:3.+")
 
+    implementation("org.json:json:20240303")               // org.json (built into Android)
     implementation("org.nanohttpd:nanohttpd:2.3.1")        // LAN server for waiters + photo upload
     implementation("com.google.zxing:core:3.5.3")          // QR codes
     implementation("net.sf.kxml:kxml2:2.3.0")              // XmlPullParser (Excel import)
