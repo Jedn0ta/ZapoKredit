@@ -14,6 +14,7 @@ import cz.klubpos.ui.AppRoot
 import cz.klubpos.ui.theme.AppBackground
 import cz.klubpos.ui.theme.KlubTheme
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
 import org.jetbrains.skia.EncodedImageFormat
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -41,7 +42,7 @@ class ScreensTest {
         val services = AppServices({ createDesktopDatabase(File(Platform.dataDir, "screens.db").apply { delete() }, Platform.subKey("database")) }, { ImageStore() })
         runBlocking { services.repository.seedIfEmpty() }
         services.settings.update { it.copy(tourDone = true) }
-        val first = runBlocking { kotlinx.coroutines.flow.first(services.repository.memberStatuses()) }.first()
+        val first = runBlocking { services.repository.memberStatuses().first() }.first()
 
         shot("1-home", services) { AppRoot() }
         shot("2-ucet", services) { cz.klubpos.ui.member.MemberDetailScreen(first.memberId, onBack = {}) }
