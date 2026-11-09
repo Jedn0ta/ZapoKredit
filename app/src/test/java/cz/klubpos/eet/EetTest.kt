@@ -7,9 +7,6 @@ import org.junit.BeforeClass
 import org.junit.Test
 import java.io.File
 import javax.xml.XMLConstants
-import javax.xml.crypto.dsig.Reference
-import javax.xml.crypto.dsig.XMLSignatureFactory
-import javax.xml.crypto.dsig.dom.DOMValidateContext
 import javax.xml.parsers.DocumentBuilderFactory
 import javax.xml.transform.dom.DOMSource
 import javax.xml.validation.SchemaFactory
@@ -37,29 +34,34 @@ class EetTest {
     private fun trzba(amount: String = "120.00") =
         Eet.Trzba("CZ00000019", 303, "POKLADNA-1", "P1/000001", "2027-01-09T16:45:36+01:00", amount)
 
+    /**
+     * Core XMLDSig validation by the JDK (java.xml.crypto). Called through reflection because Android unit tests
+     * compile against android.jar, which does not contain these classes – at runtime the JDK has them.
+     */
+    private fun jdkValidate(doc: org.w3c.dom.Document): Boolean {
+        val body = doc.getElementsByTagNameNS(Eet.NS_SOAP, "Body").item(0) as org.w3c.dom.Element
+        body.setIdAttributeNS(Eet.NS_WSU, "Id", true)
+        val sigNode = doc.getElementsByTagNameNS(Eet.NS_DS, "Signature").item(0)
+        val vcCls = Class.forName("javax.xml.crypto.dsig.XMLValidateContext")
+        val ctx = Class.forName("javax.xml.crypto.dsig.dom.DOMValidateContext")
+            .getConstructor(java.security.Key::class.java, org.w3c.dom.Node::class.java).newInstance(cert.cert.publicKey, sigNode)
+        val facCls = Class.forName("javax.xml.crypto.dsig.XMLSignatureFactory")
+        val fac = facCls.getMethod("getInstance", String::class.java).invoke(null, "DOM")
+        val sig = facCls.getMethod("unmarshalXMLSignature", vcCls).invoke(fac, ctx)
+        return Class.forName("javax.xml.crypto.dsig.XMLSignature").getMethod("validate", vcCls).invoke(sig, ctx) as Boolean
+    }
+
     private fun parse(xml: String) =
         DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }.newDocumentBuilder().parse(xml.byteInputStream())
 
     @Test fun eic_from_certificate() = assertEquals("CZ00000019", cert.eic)
 
-    @Test fun signature_is_valid_by_jdk_xmldsig() {
-        val m = Eet.buildSigned(trzba(), cert, prvniZaslani = true, overeni = false)
-        val doc = parse(m.xml)
-        val body = doc.getElementsByTagNameNS(Eet.NS_SOAP, "Body").item(0) as org.w3c.dom.Element
-        body.setIdAttributeNS(Eet.NS_WSU, "Id", true)
-        val ctx = DOMValidateContext(cert.cert.publicKey, doc.getElementsByTagNameNS(Eet.NS_DS, "Signature").item(0))
-        val sig = XMLSignatureFactory.getInstance("DOM").unmarshalXMLSignature(ctx)
-        assertTrue("reference (otisk těla)", (sig.signedInfo.references[0] as Reference).validate(ctx))
-        assertTrue("podpis", sig.validate(ctx))
-    }
+    @Test fun signature_is_valid_by_jdk_xmldsig() =
+        assertTrue(jdkValidate(parse(Eet.buildSigned(trzba(), cert, prvniZaslani = true, overeni = false).xml)))
 
     @Test fun tampered_message_fails() {
         val m = Eet.buildSigned(trzba(), cert, true, false)
-        val doc = parse(m.xml.replace("celk_trzba=\"120.00\"", "celk_trzba=\"1.00\""))
-        val body = doc.getElementsByTagNameNS(Eet.NS_SOAP, "Body").item(0) as org.w3c.dom.Element
-        body.setIdAttributeNS(Eet.NS_WSU, "Id", true)
-        val ctx = DOMValidateContext(cert.cert.publicKey, doc.getElementsByTagNameNS(Eet.NS_DS, "Signature").item(0))
-        assertFalse(XMLSignatureFactory.getInstance("DOM").unmarshalXMLSignature(ctx).validate(ctx))
+        assertFalse(jdkValidate(parse(m.xml.replace("celk_trzba=\"120.00\"", "celk_trzba=\"1.00\""))))
     }
 
     @Test fun trzba_matches_official_xsd() {
