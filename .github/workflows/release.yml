@@ -123,7 +123,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          ./gradlew :shared:test :desktop:packageMsi :desktop:createDistributable --stacktrace -PdesktopVersion="1.0.${{ github.run_number }}" 2>&1 | tee build.log
+          ./gradlew :shared:test :desktop:test :desktop:packageMsi :desktop:createDistributable --stacktrace -PdesktopVersion="1.0.${{ github.run_number }}" -PappVersion="$VERSION" 2>&1 | tee build.log
           mkdir -p dist
           cp desktop/build/compose/binaries/main/msi/*.msi "dist/ZapoKredit-PC-$VERSION.msi"
 

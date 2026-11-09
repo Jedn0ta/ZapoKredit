@@ -241,20 +241,50 @@ private fun MenuLines(d: Drink, editing: Boolean, now: java.time.LocalDateTime, 
                 Text(if (p.pourMl > 0) volumeLabel(p.pourMl) else "", Modifier.width(46.dp),
                     style = MaterialTheme.typography.bodyMedium, color = KlubColors.Muted, maxLines = 1)
                 val title = d.name + (p.servingName?.takeIf { it.isNotBlank() }?.let { "  $it" } ?: "")
-                // name may wrap, but never pushes the price out; leader dots fill what is left
-                Text(title, Modifier.weight(3f, fill = false), style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-                    color = if (dim) KlubColors.Muted else MaterialTheme.colorScheme.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                androidx.compose.foundation.Canvas(Modifier.weight(1f).height(10.dp).padding(horizontal = 6.dp)) {
-                    var x = 0f; val step = 5.dp.toPx(); val r = 0.8.dp.toPx()
-                    while (x < size.width) { drawCircle(KlubColors.Muted.copy(alpha = 0.6f), r, androidx.compose.ui.geometry.Offset(x, size.height - r)); x += step }
-                }
-                if (cur != p.price) {
-                    Text("${p.price}", style = MaterialTheme.typography.bodySmall, color = KlubColors.Muted, textDecoration = TextDecoration.LineThrough)
-                    Spacer(Modifier.width(6.dp))
-                }
-                Text(if (p.price > 0) Credits.format(cur) else "—", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                    color = if (cur != p.price) KlubColors.Gold else MaterialTheme.colorScheme.onSurface)
+                LeaderLine(Modifier.weight(1f),
+                    name = { Text(title, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                        color = if (dim) KlubColors.Muted else MaterialTheme.colorScheme.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                    price = {
+                        Row(verticalAlignment = Alignment.Bottom) {
+                            if (cur != p.price) {
+                                Text("${p.price}", style = MaterialTheme.typography.bodySmall, color = KlubColors.Muted, textDecoration = TextDecoration.LineThrough)
+                                Spacer(Modifier.width(6.dp))
+                            }
+                            Text(if (p.price > 0) Credits.format(cur) else "—", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                                color = if (cur != p.price) KlubColors.Gold else MaterialTheme.colorScheme.onSurface)
+                        }
+                    })
             }
+        }
+    }
+}
+
+/**
+ * name ........ price : the price is always at the right edge, the name gets what is left
+ * (wraps instead of pushing the price away) and the dots fill the gap.
+ */
+@Composable
+private fun LeaderLine(modifier: Modifier, name: @Composable () -> Unit, price: @Composable () -> Unit) {
+    val dotColor = KlubColors.Muted.copy(alpha = 0.6f)
+    androidx.compose.ui.layout.Layout(modifier = modifier, content = {
+        name()
+        androidx.compose.foundation.Canvas(Modifier) {
+            var x = 0f; val step = 5.dp.toPx(); val r = 0.8.dp.toPx()
+            while (x < size.width) { drawCircle(dotColor, r, androidx.compose.ui.geometry.Offset(x, size.height - r)); x += step }
+        }
+        price()
+    }) { m, c ->
+        val gap = 6.dp.roundToPx()
+        val pr = m[2].measure(androidx.compose.ui.unit.Constraints())
+        val nm = m[0].measure(androidx.compose.ui.unit.Constraints(maxWidth = (c.maxWidth - pr.width - 3 * gap).coerceAtLeast(0)))
+        val dotsW = (c.maxWidth - nm.width - pr.width - 2 * gap).coerceAtLeast(0)
+        val dotsH = 10.dp.roundToPx()
+        val dots = m[1].measure(androidx.compose.ui.unit.Constraints.fixed(dotsW, dotsH))
+        val h = maxOf(nm.height, pr.height)
+        layout(c.maxWidth, h) {
+            nm.place(0, h - nm.height)
+            dots.place(nm.width + gap, h - dotsH - 4.dp.roundToPx())
+            pr.place(c.maxWidth - pr.width, h - pr.height)
         }
     }
 }
