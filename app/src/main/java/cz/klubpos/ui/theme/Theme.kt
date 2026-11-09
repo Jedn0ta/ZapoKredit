@@ -33,13 +33,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import cz.klubpos.R
 
 /**
  * "Night lounge" look: near-black ink, warm gold accent, soft coloured glows,
@@ -70,19 +67,6 @@ object KlubColors {
         Color(0xFFA78BFA), Color(0xFFFF9F43), Color(0xFF2DD4BF), Color(0xFFFF5D6C),
     )
 }
-
-@OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
-private fun variable(res: Int, w: Int) =
-    Font(res, FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w)))
-
-val Grotesk = FontFamily(
-    variable(R.font.space_grotesk, 400), variable(R.font.space_grotesk, 500),
-    variable(R.font.space_grotesk, 600), variable(R.font.space_grotesk, 700),
-)
-val Manrope = FontFamily(
-    variable(R.font.manrope, 400), variable(R.font.manrope, 500),
-    variable(R.font.manrope, 600), variable(R.font.manrope, 700), variable(R.font.manrope, 800),
-)
 
 /** Big numbers / brand. */
 val Display = TextStyle(fontFamily = Grotesk, fontWeight = FontWeight.Bold, fontSize = 40.sp, letterSpacing = (-1).sp)

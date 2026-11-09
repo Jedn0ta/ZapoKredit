@@ -4,8 +4,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.width
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -36,11 +34,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import cz.klubpos.BuildConfig
-import cz.klubpos.R
 import cz.klubpos.domain.BusinessDay
 import cz.klubpos.ui.theme.KlubColors
 import cz.klubpos.update.ReleaseInfo
@@ -73,9 +68,8 @@ private sealed interface UpdUi {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(onStartTour: () -> Unit = {}) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val updater = remember { UpdateManager(context.applicationContext) }
+    val updater = remember { UpdateManager() }
     var state by remember { mutableStateOf<UpdUi>(UpdUi.Idle) }
 
     fun install(apk: File) {
@@ -238,14 +232,14 @@ fun SettingsScreen(onStartTour: () -> Unit = {}) {
             }
             Card(Modifier.fillMaxWidth(), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f))) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(context.getString(R.string.app_name), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    InfoRow("Verze", "${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})")
-                    InfoRow("Typ sestavení", if (BuildConfig.DEBUG) "vývojové (debug)" else "produkční")
+                    Text(cz.klubpos.platform.Platform.appName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    InfoRow("Verze", "${cz.klubpos.platform.Platform.versionName} (build ${cz.klubpos.platform.Platform.versionCode})")
+                    InfoRow("Typ sestavení", if (cz.klubpos.platform.Platform.isDebug) "vývojové (debug)" else "produkční")
                     InfoRow("Repozitář", updater.repo)
                     InfoRow("Obchodní den začíná", "%02d:00".format(BusinessDay.CUTOFF_HOUR))
                     InfoRow("Data", "šifrovaná (SQLCipher + Android Keystore)")
                     TextButton(onClick = {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(updater.repoUrl)))
+                        cz.klubpos.platform.openUri(updater.repoUrl)
                     }) { Text("Otevřít repozitář na GitHubu") }
                 }
             }

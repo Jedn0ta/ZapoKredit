@@ -1,6 +1,5 @@
 package cz.klubpos.core.io
 
-import android.util.Xml
 import cz.klubpos.data.db.entity.Product
 import org.xmlpull.v1.XmlPullParser
 import java.io.ByteArrayOutputStream
@@ -113,7 +112,7 @@ object ProductSheet {
         return parseSheet(files.getValue(sheet), shared)
     }
 
-    private fun parser(bytes: ByteArray) = Xml.newPullParser().apply {
+    private fun parser(bytes: ByteArray) = org.xmlpull.v1.XmlPullParserFactory.newInstance().newPullParser().apply {
         setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false); setInput(bytes.inputStream(), "UTF-8")
     }
 

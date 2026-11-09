@@ -1,7 +1,5 @@
 package cz.klubpos.ui.members
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -57,7 +55,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -89,7 +86,6 @@ fun MemberSettingsSheet(
 ) {
     val repo = rememberRepo()
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
     val member by repo.member(status.memberId).collectAsState(initial = null)
     val m0 = member ?: return
 
@@ -115,7 +111,7 @@ fun MemberSettingsSheet(
             phone = phone.trim(), email = email.trim(), tileColor = tint, avatar = null,
         )))
     }
-    fun go(i: Intent) = runCatching { context.startActivity(i) }
+
 
     ModalBottomSheet(onDismissRequest = { save(); onDismiss() }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = MaterialTheme.colorScheme.surface) {
@@ -136,9 +132,9 @@ fun MemberSettingsSheet(
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 SmallAction(if (status.inClub) "Odchod" else "Příchod") { scope.launch { if (status.inClub) repo.closeVisit(m0.id) else repo.openVisit(m0.id) }; save(); onDismiss() }
                 if (status.balance > 0) SmallAction("Zaplatit vše") { save(); onPayAll() }
-                if (phone.isNotBlank()) SmallAction("Zavolat") { go(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone"))) }
-                if (phone.isNotBlank()) SmallAction("SMS") { go(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$phone"))) }
-                if (email.isNotBlank()) SmallAction("E-mail") { go(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$email"))) }
+                if (phone.isNotBlank()) SmallAction("Zavolat") { cz.klubpos.platform.openUri("tel:$phone") }
+                if (phone.isNotBlank()) SmallAction("SMS") { cz.klubpos.platform.openUri("smsto:$phone") }
+                if (email.isNotBlank()) SmallAction("E-mail") { cz.klubpos.platform.openUri("mailto:$email") }
                 if (pages.size > 1) pages.forEachIndexed { i, p ->
                     if (i != status.page.coerceIn(0, pages.lastIndex)) SmallAction("→ $p") { save(); onMoveToPage(i) }
                 }

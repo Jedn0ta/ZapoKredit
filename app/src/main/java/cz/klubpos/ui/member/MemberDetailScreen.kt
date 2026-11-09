@@ -107,7 +107,6 @@ import cz.klubpos.ui.tour.tourTarget
 import cz.klubpos.ui.components.reorderableGrid
 import cz.klubpos.ui.components.reorderItem
 import cz.klubpos.domain.QrPayment
-import cz.klubpos.upload.QrGenerator
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.itemsIndexed
@@ -258,7 +257,7 @@ fun MemberDetailScreen(memberId: Long, onBack: () -> Unit) {
     }
 
     // Leaving with an unsaved order → ask.
-    androidx.activity.compose.BackHandler(enabled = cart.isNotEmpty()) { confirmLeave = true }
+    cz.klubpos.platform.PlatformBackHandler(enabled = cart.isNotEmpty()) { confirmLeave = true }
     val back: () -> Unit = { if (cart.isNotEmpty()) confirmLeave = true else onBack() }
 
     val receipt: @Composable (Modifier, Boolean) -> Unit = { mod, cartOnly ->
@@ -752,7 +751,7 @@ private fun PaySheet(
                     val payload = remember(iban, value, memberName) {
                         QrPayment.spayd(iban, value, "$clubName $memberName", variableSymbol = st.memberId)
                     }
-                    val bmp = remember(payload) { QrGenerator.bitmap(payload, 720).asImageBitmap() }
+                    val bmp = remember(payload) { cz.klubpos.platform.qrImage(payload, 720) }
                     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                         androidx.compose.foundation.Image(bmp, "QR platba",
                             Modifier.size(280.dp).clip(RoundedCornerShape(12.dp)).background(Color.White).padding(10.dp))

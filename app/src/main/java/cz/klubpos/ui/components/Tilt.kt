@@ -16,15 +16,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalContext
 
-/** Device tilt, smoothed, roughly -1..1 on each axis (0,0 = lying flat / upright neutral). */
-@Stable
-class Tilt {
-    var x by mutableFloatStateOf(0f); internal set
-    var y by mutableFloatStateOf(0f); internal set
-}
-
-val LocalTilt = staticCompositionLocalOf { Tilt() }
-
 /**
  * One gravity-sensor listener for the whole app (cheap, no polling when the screen is off).
  * Used by metallic effects so they shine as the tablet / phone is moved.

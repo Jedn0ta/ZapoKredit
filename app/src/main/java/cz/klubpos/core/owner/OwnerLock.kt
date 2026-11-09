@@ -1,8 +1,5 @@
 package cz.klubpos.core.owner
 
-import android.content.Context
-import androidx.security.crypto.EncryptedSharedPreferences
-import cz.klubpos.core.crypto.DatabaseKeyManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -11,14 +8,10 @@ import kotlinx.coroutines.flow.StateFlow
  * After pairing, protected actions need an approval code from the owner's phone; a successful
  * approval unlocks management for [UNLOCK_MINUTES].
  */
-class OwnerLock(context: Context) {
+class OwnerLock {
     companion object { const val UNLOCK_MINUTES = 10; private const val MAX_ATTEMPTS = 3 }
 
-    private val prefs = EncryptedSharedPreferences.create(
-        context, "owner_lock", DatabaseKeyManager.masterKey(context),
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-    )
+    private val prefs = cz.klubpos.platform.securePrefs("owner_lock")
 
     private val _paired = MutableStateFlow(prefs.contains("secret"))
     val paired: StateFlow<Boolean> = _paired

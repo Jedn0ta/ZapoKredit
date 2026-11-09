@@ -1,7 +1,5 @@
 package cz.klubpos.ui.suppliers
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -36,7 +34,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -108,9 +105,8 @@ private fun SupplierDialog(s: Supplier, onDismiss: () -> Unit, onDelete: (() -> 
 @Composable
 fun OrderContactsSheet(title: String, message: String, onDismiss: () -> Unit) {
     val repo = rememberRepo()
-    val context = LocalContext.current
     val list by repo.suppliers().collectAsState(initial = emptyList())
-    fun go(i: Intent) = runCatching { context.startActivity(i) }
+    fun enc(t: String) = java.net.URLEncoder.encode(t, "UTF-8").replace("+", "%20")
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surface) {
         Column(Modifier.navigationBarsPadding().padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(title, style = MaterialTheme.typography.titleLarge)
@@ -123,14 +119,13 @@ fun OrderContactsSheet(title: String, message: String, onDismiss: () -> Unit) {
                         if (s.note.isNotBlank()) Text(s.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     if (s.phone.isNotBlank()) {
-                        IconButton({ go(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${s.phone}"))) }) { Icon(Icons.Default.Call, "Zavolat", tint = KlubColors.PaidToday) }
-                        IconButton({ go(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${s.phone}")).putExtra("sms_body", message)) }) {
+                        IconButton({ cz.klubpos.platform.openUri("tel:${s.phone}") }) { Icon(Icons.Default.Call, "Zavolat", tint = KlubColors.PaidToday) }
+                        IconButton({ cz.klubpos.platform.openUri("smsto:${s.phone}?body=${enc(message)}") }) {
                             Icon(Icons.Default.Sms, "SMS", tint = KlubColors.InClub)
                         }
                     }
                     if (s.email.isNotBlank()) IconButton({
-                        go(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:${s.email}"))
-                            .putExtra(Intent.EXTRA_SUBJECT, "Objednávka").putExtra(Intent.EXTRA_TEXT, message))
+                        cz.klubpos.platform.openUri("mailto:${s.email}?subject=${enc("Objednávka")}&body=${enc(message)}")
                     }) { Icon(Icons.Default.Email, "E-mail", tint = KlubColors.Gold) }
                 }
             }

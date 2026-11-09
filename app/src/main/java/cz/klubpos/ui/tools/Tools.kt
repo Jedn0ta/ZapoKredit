@@ -32,7 +32,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -150,8 +149,7 @@ private val MONTHS = listOf("leden", "únor", "březen", "duben", "květen", "č
 /** Month calendar with a note per day (stored on this device). */
 @Composable
 fun CalendarDialog(onDismiss: () -> Unit) {
-    val ctx = LocalContext.current
-    val prefs = remember { ctx.getSharedPreferences("calendar_notes", android.content.Context.MODE_PRIVATE) }
+    val prefs = remember { cz.klubpos.platform.securePrefs("calendar_notes") }
     var month by remember { mutableStateOf(YearMonth.now()) }
     var selected by remember { mutableStateOf(LocalDate.now()) }
     var version by remember { mutableStateOf(0) }

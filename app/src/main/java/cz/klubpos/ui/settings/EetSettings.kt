@@ -1,7 +1,5 @@
 package cz.klubpos.ui.settings
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -33,12 +31,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import cz.klubpos.KlubPosApp
 import cz.klubpos.eet.Eet
 import cz.klubpos.ui.theme.KlubColors
 import cz.klubpos.ui.theme.glass
@@ -52,19 +48,15 @@ import java.util.Locale
 /** EET 2.0: settings, certificate, test send and the list of reported payments. */
 @Composable
 fun EetSettings() {
-    val app = LocalContext.current.applicationContext as KlubPosApp
+    val app = cz.klubpos.LocalServices.current
     val eet = app.eet
     val cfg by eet.config.collectAsState()
     val records by remember { app.repository.eetDao().observeRecent(30) }.collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
-    val ctx = LocalContext.current
     var pending by remember { mutableStateOf<ByteArray?>(null) }
     var info by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
-    val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        pending = runCatching { ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
-    }
+    val pickCert = cz.klubpos.platform.rememberFilePicker(arrayOf("application/x-pkcs12", "application/octet-stream", "*/*")) { _, bytes -> pending = bytes }
     val certInfo = remember(cfg.certB64, cfg.certPassword) { runCatching { eet.loadCert(cfg) }.getOrNull() }
 
     Column(Modifier.fillMaxWidth().glass().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -104,7 +96,7 @@ fun EetSettings() {
                 if (certInfo != null) Text("platný do " + SimpleDateFormat("d. M. yyyy", Locale("cs", "CZ")).format(certInfo.validTo),
                     style = MaterialTheme.typography.bodySmall, color = KlubColors.Muted)
             }
-            OutlinedButton({ pick.launch(arrayOf("application/x-pkcs12", "application/octet-stream", "*/*")) }) { Text("Nahrát .p12") }
+            OutlinedButton({ pickCert() }) { Text("Nahrát .p12") }
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

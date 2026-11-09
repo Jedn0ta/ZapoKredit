@@ -1,8 +1,5 @@
 package cz.klubpos.core
 
-import android.content.Context
-import androidx.security.crypto.EncryptedSharedPreferences
-import cz.klubpos.core.crypto.DatabaseKeyManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONArray
@@ -15,12 +12,8 @@ data class Combo(val name: String, val items: List<Pair<Long, Double>>)
 data class MemberPrefs(val favorites: List<Long> = emptyList(), val combos: List<Combo> = emptyList())
 
 /** Encrypted store of [MemberPrefs] for all members. */
-class MemberPrefsStore(context: Context) {
-    private val prefs = EncryptedSharedPreferences.create(
-        context, "member_prefs", DatabaseKeyManager.masterKey(context),
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-    )
+class MemberPrefsStore {
+    private val prefs = cz.klubpos.platform.securePrefs("member_prefs")
     private val _flow = MutableStateFlow(readAll())
     val flow: StateFlow<Map<Long, MemberPrefs>> = _flow
 

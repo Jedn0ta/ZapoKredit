@@ -8,17 +8,12 @@ import android.graphics.pdf.PdfDocument
 import androidx.core.content.FileProvider
 import java.io.File
 
-/** One printable line of the drink list. */
-sealed class PdfLine {
-    data class Header(val text: String) : PdfLine()
-    data class Item(val volume: String, val name: String, val price: String) : PdfLine()
-}
-
 /**
  * Renders the drink list as an A4 PDF with the same columns as on screen and opens the share/print chooser.
  * Columns flow independently; a column that does not fit continues on the next page.
  */
-fun shareMenuPdf(context: Context, title: String, columns: List<List<PdfLine>>, scale: Float) {
+fun shareMenuPdf(title: String, columns: List<List<PdfLine>>, scale: Float) {
+    val context: Context = cz.klubpos.platform.Platform.app
     val w = 595; val h = 842                       // A4 in points
     val margin = 40f; val gap = 24f
     val font = runCatching { androidx.core.content.res.ResourcesCompat.getFont(context, cz.klubpos.R.font.manrope) }.getOrNull()

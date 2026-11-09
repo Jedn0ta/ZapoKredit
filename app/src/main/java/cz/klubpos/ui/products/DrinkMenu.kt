@@ -114,8 +114,7 @@ fun DrinkMenuScreen() {
     var showIo by remember { mutableStateOf(false) }
     var advanced by remember { mutableStateOf<Product?>(null) }
     val now = rememberMinuteClock()
-    val ctx = androidx.compose.ui.platform.LocalContext.current
-    val prefs = remember { ctx.getSharedPreferences("menu_layout", android.content.Context.MODE_PRIVATE) }
+    val prefs = remember { cz.klubpos.platform.securePrefs("menu_layout") }
     var cols by remember { mutableStateOf(prefs.getInt("cols", 2).coerceIn(1, 3)) }
     var scale by remember { mutableStateOf(prefs.getFloat("scale", 1f)) }
     var layoutRaw by remember { mutableStateOf(prefs.getString("layout$cols", "") ?: "") }
@@ -160,7 +159,7 @@ fun DrinkMenuScreen() {
                     listOf<PdfLine>(PdfLine.Header(k.label)) + menu[k].orEmpty().flatMap { d -> d.servings.filter { it.price > 0 }.map { p ->
                         PdfLine.Item(volumeLabel(p.pourMl), d.name + (p.servingName?.takeIf { it.isNotBlank() }?.let { "  $it" } ?: ""), "${p.price} Kč") } }
                 } }.filter { it.isNotEmpty() }.ifEmpty { listOf(emptyList()) }
-                runCatching { shareMenuPdf(ctx, "Nápojový lístek", pdfCols, scale) }
+                runCatching { shareMenuPdf("Nápojový lístek", pdfCols, scale) }
             }) { Icon(Icons.Default.PictureAsPdf, "Uložit do PDF / tisk", tint = KlubColors.Muted) }
             if (editing) IconButton({ showIo = true }) { Icon(Icons.Default.UploadFile, "Import / vzor z Excelu", tint = KlubColors.Muted) }
             TextButton({ if (editing) { editing = false; open = null } else if (unlocked) editing = true else askUnlock = true },

@@ -35,7 +35,7 @@ sealed interface UpdateCheck {
  * `.github/workflows/release.yml` does both). The APK must be signed with the same key as the
  * installed app, otherwise Android rejects the update.
  */
-class UpdateManager(private val context: Context) {
+class UpdateManager(private val context: Context = cz.klubpos.platform.Platform.app) {
 
     val currentVersion: String = BuildConfig.VERSION_NAME
     val repo: String = BuildConfig.UPDATE_REPO

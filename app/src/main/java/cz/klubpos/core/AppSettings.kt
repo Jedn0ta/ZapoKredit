@@ -1,8 +1,5 @@
 package cz.klubpos.core
 
-import android.content.Context
-import androidx.security.crypto.EncryptedSharedPreferences
-import cz.klubpos.core.crypto.DatabaseKeyManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,12 +28,8 @@ data class Settings(
 )
 
 /** Small encrypted key-value store for app configuration. */
-class AppSettings(context: Context) {
-    private val prefs = EncryptedSharedPreferences.create(
-        context, "klubpos_settings", DatabaseKeyManager.masterKey(context),
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-    )
+class AppSettings {
+    private val prefs = cz.klubpos.platform.securePrefs("klubpos_settings")
     private val _flow = MutableStateFlow(read())
     val flow: StateFlow<Settings> = _flow.asStateFlow()
     val current get() = _flow.value

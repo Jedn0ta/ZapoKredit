@@ -1,9 +1,6 @@
 package cz.klubpos.eet
 
-import android.content.Context
-import androidx.security.crypto.EncryptedSharedPreferences
-import cz.klubpos.KlubPosApp
-import cz.klubpos.core.crypto.DatabaseKeyManager
+import cz.klubpos.AppServices
 import cz.klubpos.data.db.entity.EetRecord
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -38,12 +35,8 @@ data class EetConfig(
  * Evidence of payments: every payment → one record → signed message to EET (2 s limit),
  * failed sends are retried in the background with prvni_zaslani = false.
  */
-class EetService(private val app: KlubPosApp) {
-    private val prefs = EncryptedSharedPreferences.create(
-        app, "eet_config", DatabaseKeyManager.masterKey(app),
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-    )
+class EetService(private val app: AppServices) {
+    private val prefs = cz.klubpos.platform.securePrefs("eet_config")
     private val _config = MutableStateFlow(read())
     val config: StateFlow<EetConfig> = _config
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

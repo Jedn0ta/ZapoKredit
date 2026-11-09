@@ -4,7 +4,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import cz.klubpos.ui.theme.glass
-import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
@@ -51,7 +50,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
@@ -77,7 +75,6 @@ import kotlinx.coroutines.launch
 fun ShoppingScreen() {
     val repo = rememberRepo()
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     val items by repo.shoppingList().collectAsState(initial = emptyList())
     val products by repo.allProducts().collectAsState(initial = emptyList())
@@ -115,10 +112,8 @@ fun ShoppingScreen() {
                 }) { Icon(Icons.Default.AutoFixHigh, "Doplnit do cílového stavu", tint = KlubColors.Muted) }
                 IconButton(enabled = open.isNotEmpty(), onClick = { order = true }) { Icon(Icons.Default.Call, "Objednat u dodavatele", tint = KlubColors.Muted) }
                 IconButton(enabled = open.isNotEmpty(), onClick = {
-                    context.startActivity(Intent.createChooser(
-                        Intent(Intent.ACTION_SEND).setType("text/plain")
-                            .putExtra(Intent.EXTRA_SUBJECT, "Nákupní seznam")
-                            .putExtra(Intent.EXTRA_TEXT, shareText(open, supName)), "Odeslat nákupní seznam"))
+                    cz.klubpos.platform.shareText("Nákupní seznam", shareText(open, supName), "Odeslat nákupní seznam")
+                        ?.let { m -> scope.launch { snackbar.showSnackbar(m) } }
                 }) { Icon(Icons.Default.Share, "Odeslat", tint = KlubColors.Muted) }
             }
             // quick add

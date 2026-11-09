@@ -29,20 +29,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import cz.klubpos.KlubPosApp
 import cz.klubpos.core.owner.OwnerLock
 import cz.klubpos.ui.member.Keypad
 import cz.klubpos.ui.theme.Display
 import cz.klubpos.ui.theme.KlubColors
-import cz.klubpos.upload.QrGenerator
 import kotlinx.coroutines.delay
 
 @Composable
-fun rememberOwnerLock(): OwnerLock = (LocalContext.current.applicationContext as KlubPosApp).ownerLock
+fun rememberOwnerLock(): OwnerLock = cz.klubpos.LocalServices.current.ownerLock
 
 /** True while management is unlocked (or no owner is paired yet). Re-evaluates every second. */
 @Composable
@@ -57,7 +54,7 @@ fun rememberOwnerUnlocked(): Boolean {
 
 @Composable
 private fun Qr(payload: String) {
-    val bmp = remember(payload) { QrGenerator.bitmap(payload, 720).asImageBitmap() }
+    val bmp = remember(payload) { cz.klubpos.platform.qrImage(payload, 720) }
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Image(bmp, null, Modifier.size(250.dp).clip(RoundedCornerShape(16.dp)).background(Color.White).padding(10.dp))
     }

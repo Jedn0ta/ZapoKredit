@@ -1,6 +1,6 @@
 package cz.klubpos.data.repo
 
-import androidx.room.withTransaction
+import cz.klubpos.data.db.tx
 import cz.klubpos.core.crypto.ImageStore
 import cz.klubpos.data.db.AppDatabase
 import cz.klubpos.data.db.entity.EntryType
@@ -111,7 +111,7 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
     suspend fun setMemberPage(memberId: Long, page: Int) = db.members().setPage(memberId, page, db.members().maxOrder(page) + 1)
 
     /** A card was deleted: its members go to the first card, later cards shift left. */
-    suspend fun removeMemberPage(index: Int) = db.withTransaction {
+    suspend fun removeMemberPage(index: Int) = db.tx {
         db.members().movePage(index, 0)
         db.members().shiftPagesAfter(index)
     }
@@ -129,8 +129,8 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
     suspend fun setVip(memberId: Long, vip: Boolean) { db.members().get(memberId)?.let { db.members().update(it.copy(vip = vip)) } }
 
     /** Persist drag & drop order of the main screen. */
-    suspend fun saveMemberOrder(ids: List<Long>) = db.withTransaction { ids.forEachIndexed { i, id -> db.members().setOrder(id, i) } }
-    suspend fun saveProductOrder(ids: List<Long>) = db.withTransaction { ids.forEachIndexed { i, id -> db.products().setOrder(id, i) } }
+    suspend fun saveMemberOrder(ids: List<Long>) = db.tx { ids.forEachIndexed { i, id -> db.members().setOrder(id, i) } }
+    suspend fun saveProductOrder(ids: List<Long>) = db.tx { ids.forEachIndexed { i, id -> db.products().setOrder(id, i) } }
 
     suspend fun setMemberPhoto(memberId: Long, raw: ByteArray) {
         val m = db.members().get(memberId) ?: return
@@ -155,7 +155,7 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
 
     /** Write a product to the member's tab. Opens a visit automatically and lowers stock. */
     suspend fun chargeProduct(memberId: Long, productId: Long, qty: Double = 1.0, priceOverride: Long? = null) =
-        db.withTransaction {
+        db.tx {
             val p = db.products().get(productId) ?: error("Produkt nenalezen")
             val unit = priceOverride ?: p.currentPrice()
             // "do vyprodání": count down the pieces sold at the sale price
@@ -182,7 +182,7 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
         }
 
     /** Free-form item: bartender types a description and a price. */
-    suspend fun chargeCustom(memberId: Long, description: String, amount: Long) = db.withTransaction {
+    suspend fun chargeCustom(memberId: Long, description: String, amount: Long) = db.tx {
         require(amount > 0) { "Částka musí být kladná" }
         val visitId = openVisit(memberId)
         insertEntry(
@@ -199,7 +199,7 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
         onPayment?.invoke(id, memberId, amount, at)
     }
 
-    private suspend fun payTx(memberId: Long, amount: Long, closeVisitAfter: Boolean, method: String) = db.withTransaction {
+    private suspend fun payTx(memberId: Long, amount: Long, closeVisitAfter: Boolean, method: String) = db.tx {
         require(amount > 0) { "Částka musí být kladná" }
         val at = System.currentTimeMillis()
         val id = insertEntry(
@@ -218,7 +218,7 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
     data class CartItem(val productId: Long?, val description: String, val unitPrice: Long, val qty: Double)
 
     /** Write the whole order to the member's tab at once ("na futro"). */
-    suspend fun chargeCart(memberId: Long, items: List<CartItem>) = db.withTransaction {
+    suspend fun chargeCart(memberId: Long, items: List<CartItem>) = db.tx {
         items.forEach { i ->
             if (i.productId != null) {
                 val p = db.products().get(i.productId)
@@ -234,7 +234,7 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
         db.ledger().lastCharge(memberId)?.takeIf { db.ledger().voidCount(it.id) == 0 }
 
     /** Round: the same product written to several members at once. */
-    suspend fun chargeRound(memberIds: Collection<Long>, productId: Long) = db.withTransaction {
+    suspend fun chargeRound(memberIds: Collection<Long>, productId: Long) = db.tx {
         memberIds.forEach { chargeProduct(it, productId) }
     }
 
@@ -251,9 +251,9 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
         db.ledger().lastCharge(memberId)?.takeIf { db.ledger().voidCount(it.id) == 0 }?.description
 
     /** Move one charge to another member's tab (storno here, same item there). */
-    suspend fun transfer(entryId: Long, toMemberId: Long) = db.withTransaction {
-        val e = db.ledger().get(entryId) ?: return@withTransaction
-        if (e.type != EntryType.CHARGE || e.memberId == toMemberId) return@withTransaction
+    suspend fun transfer(entryId: Long, toMemberId: Long) = db.tx {
+        val e = db.ledger().get(entryId) ?: return@tx
+        if (e.type != EntryType.CHARGE || e.memberId == toMemberId) return@tx
         insertEntry(e.copy(id = 0, amount = -e.amount, description = "Přesun: ${e.description}",
             voidsEntryId = e.id, createdAt = System.currentTimeMillis()))
         insertEntry(e.copy(id = 0, memberId = toMemberId, visitId = openVisit(toMemberId),
@@ -275,9 +275,9 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
     suspend fun balance(memberId: Long) = db.ledger().balance(memberId)
 
     /** Storno: adds a reversing entry (ledger stays auditable) and returns stock. */
-    suspend fun void(entryId: Long) = db.withTransaction {
-        val e = db.ledger().get(entryId) ?: return@withTransaction
-        if (e.voidsEntryId != null || db.ledger().voidCount(e.id) > 0) return@withTransaction
+    suspend fun void(entryId: Long) = db.tx {
+        val e = db.ledger().get(entryId) ?: return@tx
+        if (e.voidsEntryId != null || db.ledger().voidCount(e.id) > 0) return@tx
         insertEntry(
             e.copy(
                 id = 0, amount = -e.amount, description = "Storno: ${e.description}",
@@ -310,14 +310,14 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
     }
 
     /** Goods arrived (naskladnění). */
-    suspend fun receiveStock(productId: Long, qty: Double) = db.withTransaction {
+    suspend fun receiveStock(productId: Long, qty: Double) = db.tx {
         db.products().adjustStock(productId, qty)
         db.stock().insert(StockMovement(productId = productId, delta = qty, reason = "PURCHASE"))
     }
 
     /** Physical count (inventura): sets the absolute amount and logs the difference. */
-    suspend fun setCountedStock(productId: Long, counted: Double) = db.withTransaction {
-        val p = db.products().get(productId) ?: return@withTransaction
+    suspend fun setCountedStock(productId: Long, counted: Double) = db.tx {
+        val p = db.products().get(productId) ?: return@tx
         val diff = counted - p.stockQty
         if (diff != 0.0) {
             db.products().adjustStock(productId, diff)
@@ -356,7 +356,7 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
     }
 
     /** Fill the shopping list up to target stock. Returns how many lines were added. */
-    suspend fun generateShoppingList(): Int = db.withTransaction {
+    suspend fun generateShoppingList(): Int = db.tx {
         val open = db.shopping().observeAll().first().filter { !it.done }
         var added = 0
         for (l in computeOrder()) {
@@ -377,14 +377,14 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
     suspend fun linkedProducts(stockItemId: Long) = db.stockItems().linkedProducts(stockItemId)
 
     /** Create / update a stock item and set which menu servings take from it. */
-    suspend fun saveStockItem(item: cz.klubpos.data.db.entity.StockItem, linkedProductIds: List<Long>) = db.withTransaction {
+    suspend fun saveStockItem(item: cz.klubpos.data.db.entity.StockItem, linkedProductIds: List<Long>) = db.tx {
         val id = if (item.id == 0L) db.stockItems().insert(item) else { db.stockItems().update(item); item.id }
         db.stockItems().unlinkAll(id)
         if (linkedProductIds.isNotEmpty()) db.stockItems().link(id, linkedProductIds)
         id
     }
 
-    suspend fun deleteStockItem(id: Long) = db.withTransaction {
+    suspend fun deleteStockItem(id: Long) = db.tx {
         db.stockItems().get(id)?.let { db.stockItems().update(it.copy(active = false)) }
         db.stockItems().unlinkAll(id)
     }
@@ -393,7 +393,7 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
     suspend fun receiveStockItem(id: Long, qty: Double) = db.stockItems().adjust(id, qty)
 
     /** Inventura: set counted quantities (id → containers). */
-    suspend fun saveCount(counts: Map<Long, Double>) = db.withTransaction {
+    suspend fun saveCount(counts: Map<Long, Double>) = db.tx {
         counts.forEach { (id, q) -> db.stockItems().get(id)?.let { db.stockItems().update(it.copy(qty = q.coerceAtLeast(0.0))) } }
     }
 
@@ -411,11 +411,11 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
      * Ticking an item as bought; when [receive] is true and it is linked to a product,
      * the purchased quantity is added to stock straight away.
      */
-    suspend fun setShoppingDone(item: ShoppingItem, done: Boolean, receive: Boolean) = db.withTransaction {
+    suspend fun setShoppingDone(item: ShoppingItem, done: Boolean, receive: Boolean) = db.tx {
         if (done && receive && item.stockItemId != null) {
             db.shopping().update(item.copy(done = true))
             db.stockItems().adjust(item.stockItemId, item.quantity)
-            return@withTransaction
+            return@tx
         }
         db.shopping().update(item.copy(done = done))
         if (done && receive && item.productId != null) receiveStock(item.productId, item.quantity)
@@ -453,7 +453,7 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
     private fun fmtL(v: Double) = if (v % 1.0 == 0.0) v.toLong().toString() else v.toString()
 
     /** Tap a new keg: the previous one is marked finished and one full keg is taken from the cellar. */
-    suspend fun tapKeg(group: String, sizeLiters: Double, fromStock: Boolean = true) = db.withTransaction {
+    suspend fun tapKeg(group: String, sizeLiters: Double, fromStock: Boolean = true) = db.tx {
         val now = System.currentTimeMillis()
         db.kegs().finishActive(group, now)
         db.kegs().insert(cz.klubpos.data.db.entity.Keg(kegGroup = group, sizeLiters = sizeLiters, tappedAt = now))
@@ -467,7 +467,7 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
     suspend fun finishKeg(group: String) = db.kegs().finishActive(group, System.currentTimeMillis())
 
     /** New draught beer: creates the big (0,5) and optional small (0,3) items + cellar record. */
-    suspend fun addDraughtBeer(name: String, sizeLiters: Double, bigPrice: Long, smallPrice: Long?) = db.withTransaction {
+    suspend fun addDraughtBeer(name: String, sizeLiters: Double, bigPrice: Long, smallPrice: Long?) = db.tx {
         val g = name.trim()
         db.products().insert(Product(name = "$g velké", category = "Čepované", price = bigPrice, trackStock = false, kegGroup = g, pourMl = 500, kind = "DRAUGHT"))
         if (smallPrice != null) db.products().insert(Product(name = "$g malé", category = "Čepované", price = smallPrice, trackStock = false, kegGroup = g, pourMl = 300, kind = "DRAUGHT"))
@@ -475,7 +475,7 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
     }
 
     /** Stop tracking a beer type on tap: keg ended, cellar record removed, its items become ordinary items. */
-    suspend fun removeDraughtBeer(group: String) = db.withTransaction {
+    suspend fun removeDraughtBeer(group: String) = db.tx {
         db.kegs().finishActive(group, System.currentTimeMillis())
         db.kegs().deleteStock(group)
         db.kegs().detachProducts(group)
@@ -494,7 +494,7 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
      * Removed sizes are hidden (not deleted – the history keeps them).
      */
     suspend fun saveDrink(oldName: String?, kind: cz.klubpos.domain.Kind, name: String, servings: List<Serving>, kegSize: Double?) =
-        db.withTransaction {
+        db.tx {
             val n = name.trim()
             val existing = if (oldName != null) db.products().servingsOf(oldName) else emptyList()
             val draught = kind == cz.klubpos.domain.Kind.DRAUGHT
@@ -522,7 +522,7 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
         }
 
     /** Remove a drink from the menu (all sizes hidden; draught: keg tracking removed). */
-    suspend fun deleteDrink(name: String) = db.withTransaction {
+    suspend fun deleteDrink(name: String) = db.tx {
         val list = db.products().servingsOf(name)
         list.forEach { db.products().update(it.copy(active = false)) }
         if (list.any { it.kegGroup != null }) removeDraughtBeer(name)
@@ -540,7 +540,7 @@ class ClubRepository(private val db: AppDatabase, val images: ImageStore) {
     data class ImportResult(val added: Int, val updated: Int, val skipped: List<String>)
 
     /** Upsert products by name (case-insensitive). Stock is only changed when the row contains a value. */
-    suspend fun importProducts(rows: List<cz.klubpos.core.io.ProductRow>): ImportResult = db.withTransaction {
+    suspend fun importProducts(rows: List<cz.klubpos.core.io.ProductRow>): ImportResult = db.tx {
         val existing = db.products().all().associateBy { it.name.trim().lowercase() }
         var added = 0; var updated = 0
         val skipped = mutableListOf<String>()

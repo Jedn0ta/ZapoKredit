@@ -1,7 +1,5 @@
 package cz.klubpos.upload
 
-import android.content.Context
-import android.net.wifi.WifiManager
 import fi.iki.elonen.NanoHTTPD
 import java.io.File
 import java.net.Inet4Address
@@ -21,7 +19,6 @@ import java.util.Base64
  * unencrypted (plain HTTP) – acceptable for a closed club network; see README for an HTTPS option.
  */
 class PhotoUploadServer(
-    private val context: Context,
     private val onImage: (ByteArray) -> Unit,
     private val ttlMillis: Long = 5 * 60_000,
 ) : NanoHTTPD(0) {
@@ -66,19 +63,7 @@ class PhotoUploadServer(
 
     private fun html(body: String) = newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", body)
 
-    private fun localIp(): String? {
-        // Prefer the Wi-Fi interface; fall back to any site-local IPv4 address.
-        @Suppress("DEPRECATION")
-        val wifiIp = (context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager)
-            ?.connectionInfo?.ipAddress ?: 0
-        if (wifiIp != 0) {
-            return "%d.%d.%d.%d".format(wifiIp and 0xff, wifiIp shr 8 and 0xff, wifiIp shr 16 and 0xff, wifiIp shr 24 and 0xff)
-        }
-        return NetworkInterface.getNetworkInterfaces().toList()
-            .flatMap { it.inetAddresses.toList() }
-            .firstOrNull { it is Inet4Address && !it.isLoopbackAddress && it.isSiteLocalAddress }
-            ?.hostAddress
-    }
+    private fun localIp(): String? = cz.klubpos.net.Lan.localIPv4()
 
     private companion object {
         fun msg(text: String) = """<!doctype html><meta name=viewport content="width=device-width">

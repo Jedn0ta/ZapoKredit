@@ -1,26 +1,23 @@
 package cz.klubpos
 
 import android.app.Application
-import kotlinx.coroutines.launch
 import cz.klubpos.core.crypto.ImageStore
-import cz.klubpos.data.db.AppDatabase
-import cz.klubpos.data.repo.ClubRepository
+import cz.klubpos.data.db.createDatabase
+import kotlinx.coroutines.launch
 
-/** Manual DI – small app, no need for Hilt yet. */
+/** Android entry: platform init + shared services. */
 class KlubPosApp : Application() {
-    val settings: cz.klubpos.core.AppSettings by lazy { cz.klubpos.core.AppSettings(this) }
-    val memberPrefs: cz.klubpos.core.MemberPrefsStore by lazy { cz.klubpos.core.MemberPrefsStore(this) }
-    val ownerLock: cz.klubpos.core.owner.OwnerLock by lazy { cz.klubpos.core.owner.OwnerLock(this) }
-    val repository: ClubRepository by lazy {
-        ClubRepository(AppDatabase.create(this), ImageStore(this)).also { r ->
-            r.onPayment = { id, member, amount, at -> eet.recordPayment(id, member, amount, at) }
-        }
-    }
-    val eet: cz.klubpos.eet.EetService by lazy { cz.klubpos.eet.EetService(this) }
-    val lan: cz.klubpos.lan.LanHub by lazy { cz.klubpos.lan.LanHub(this) }
+    val services by lazy { AppServices({ createDatabase(this) }, { ImageStore(this) }) }
+    val settings get() = services.settings
+    val repository get() = services.repository
+    val lan get() = services.lan
+    val eet get() = services.eet
+    val ownerLock get() = services.ownerLock
+    val memberPrefs get() = services.memberPrefs
 
     override fun onCreate() {
         super.onCreate()
+        cz.klubpos.platform.Platform.app = this
         // EET: retry anything that could not be sent (no internet / server down)
         if (BuildConfig.FLAVOR == "pos") kotlinx.coroutines.MainScope().launch { repository; eet.retryLoop() }
     }

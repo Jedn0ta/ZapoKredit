@@ -25,23 +25,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import cz.klubpos.KlubPosApp
 import cz.klubpos.net.Lan
 import cz.klubpos.ui.theme.KlubColors
 import cz.klubpos.ui.theme.glass
-import cz.klubpos.upload.QrGenerator
 import kotlinx.coroutines.delay
 
 /** Register as a server: waiters' phones and the PC connect with the QR / code shown here. */
 @Composable
 fun LanSettings() {
-    val app = LocalContext.current.applicationContext as KlubPosApp
-    val lan = app.lan
+    val lan = cz.klubpos.LocalServices.current.lan
     val cfg by lan.config.collectAsState()
     val running by lan.running.collectAsState()
     val devices by lan.devices.collectAsState()
@@ -93,8 +88,8 @@ fun LanSettings() {
     if (showDownload) AlertDialog(onDismissRequest = { showDownload = false }, title = { Text("Aplikace Číšník a PC pokladna") },
         text = {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                val url = "https://github.com/${cz.klubpos.BuildConfig.UPDATE_REPO}/releases/latest"
-                val bmp = remember { QrGenerator.bitmap(url, 480).asImageBitmap() }
+                val url = "https://github.com/${cz.klubpos.platform.Platform.updateRepo}/releases/latest"
+                val bmp = remember { cz.klubpos.platform.qrImage(url, 480) }
                 Image(bmp, null, Modifier.size(200.dp))
                 Text("Naskenuj mobilem a stáhni ZapoKredit-Cisnik-….apk. Pro Windows stáhni ZapoKredit-PC-….msi.",
                     style = MaterialTheme.typography.bodySmall)
