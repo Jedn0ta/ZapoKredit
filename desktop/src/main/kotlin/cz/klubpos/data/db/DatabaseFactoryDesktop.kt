@@ -28,9 +28,12 @@ suspend fun <R> AppDatabase.tx(block: suspend () -> R): R = useWriterConnection 
 /** androidx.sqlite driver on top of JDBC (sqlite-jdbc with encryption), so Room runs on the PC. */
 class EncryptedJdbcDriver(private val hexKey: String) : SQLiteDriver {
     override fun open(fileName: String): SQLiteConnection {
-        val c = DriverManager.getConnection("jdbc:sqlite:$fileName")
+        // key as URI parameter: SQLite3 Multiple Ciphers applies it before anything else touches the file
+        val path = File(fileName).absolutePath.replace('\\', '/')
+            .replace("%", "%25").replace(" ", "%20").replace("?", "%3F").replace("#", "%23")
+        val uri = "file://" + (if (path.startsWith("/")) "" else "/") + path + "?hexkey=" + hexKey
+        val c = DriverManager.getConnection("jdbc:sqlite:$uri")
         c.createStatement().use { st ->
-            st.execute("PRAGMA key = '$hexKey'")
             st.executeQuery("SELECT count(*) FROM sqlite_master").use { it.next() }   // fails here with a wrong key
         }
         return JdbcConnection(c)
